@@ -1,0 +1,13 @@
+launch:
+
+- node:
+    pkg: "perception"
+    exec: "main"
+    name: "laneobserver"
+    namespace: "basic_driving"
+
+- node:
+    pkg: "planning"
+    exec: "main"
+    name: "defaultdriving"
+    namespace: "basic_driving"
