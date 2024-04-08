@@ -15,8 +15,8 @@ setup(
     zip_safe=True,
     maintainer='toni',
     maintainer_email='toni.sand@student.tu-freiberg.de',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Package for nodes connected to turtlebot environment perception',
+    license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
