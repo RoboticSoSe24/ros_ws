@@ -5,6 +5,7 @@ from std_msgs.msg import String
 
 import cv2
 import numpy as np
+import random as rng
 
 from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge, CvBridgeError
@@ -51,48 +52,72 @@ class LaneObserver(Node):
     def image_callback(self, data):
         # retrieve camera image
         img_cv = self.bridge.compressed_imgmsg_to_cv2(data, desired_encoding='passthrough')
-        
-        # get light channel
+        img_cv = cv2.resize(img_cv, (320, 240))
+
+        # get lightness channel
         img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2HLS)
         img_cv = cv2.split(img_cv)[1]
 
         # pad into bigger matrix
         sub = np.zeros((960, 1280, 1), dtype = "uint8")
         sub[720:960, 480:800, 0] = img_cv
+        cv2.imshow("padded src", sub)
 
-        pts1 = np.float32([
-            [105 + 480, 178 + 720], 
-            [190 + 480, 178 + 720], 
+        # perspective transform
+        pts1 = np.float32([             # source points (measured prior)
+            [104 + 480, 178 + 720], 
+            [191 + 480, 178 + 720], 
             [67  + 480, 231 + 720], 
             [225 + 480, 233 + 720]])
-        
-        pts2 = np.float32([
+        pts2 = np.float32([             # destination points
             [480,720], 
             [800,720], 
             [480,img_cv.shape[0]+720], 
             [img_cv.shape[1]+480,img_cv.shape[0]+720]])
-        
-        # perspective transform
-        M = cv2.getPerspectiveTransform(pts1,pts2)        
+        M = cv2.getPerspectiveTransform(pts1,pts2)        # transformation matrix
         dst = cv2.warpPerspective(sub, M, (1280, 960))
 
+        dst = cv2.resize(dst, None, fx = 0.25, fy = 0.25)
+        dst = cv2.GaussianBlur(dst, (5, 5), 0)
+        cv2.imshow("warped", dst)
 
-        dst = cv2.resize(dst, None, fx = 0.5, fy = 0.5)
-        ret, thresh = cv2.threshold(dst, 120, 255, cv2.THRESH_BINARY)
 
-        # find line segments in threshold image
-        linesP = cv2.HoughLinesP(thresh, 1, np.pi / 180.0, 50, None, 30, 10)
-        cdstP = np.zeros((480, 640, 3), dtype = "uint8")
+        # find edges
+        edges = cv2.Canny(dst, 40, 150)
+        cv2.imshow("canny", edges)
+
+
+        # find lines thicker than minimum width
+        dilate = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (10, 10)))
+        erode = cv2.erode(dilate, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (16, 16)))
+        cv2.imshow("dilate_erode", erode)
+
+
+        # find centerline between the two largest lines in the image
+        erode = cv2.dilate(erode, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (40, 40)))   # dilate to connect dotted line into one contour
+        contours,_ = cv2.findContours(erode, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        if contours is None or len(contours) < 2:
+            return
+        
+        contours = sorted(contours, key=lambda cnt: cv2.contourArea(cnt), reverse=True)[:2]
+        img1 = np.zeros(erode.shape, dtype="uint8")
+        cv2.drawContours(img1, [contours[0]], 0, (255,255,255), 87)     # dilate to provoce an overlap with the other line
+        img2 = np.zeros(erode.shape, dtype="uint8")
+        cv2.drawContours(img2, [contours[1]], 0, (255,255,255), 87)     # dilate to achieve an overlap with the other line
+        centerImg = cv2.ximgproc.thinning(img1 & img2, 0)               # binary AND to get only overlap region
+        cv2.imshow("centerline", centerImg)
+        
+        linesP = cv2.HoughLinesP(centerImg, 1, np.pi / 360, 30, None, 30, 5)
+        cdstP = np.zeros((240, 320, 3), dtype="uint8")
         if linesP is not None:
             for i in range(0, len(linesP)):
                 l = linesP[i][0]
-                cv2.line(cdstP, (l[0], l[1]), (l[2], l[3]), (0,0,255), 3, cv2.LINE_AA)
-        
+                cv2.line(cdstP, (l[0], l[1]), (l[2], l[3]), (0,0,255), 1, cv2.LINE_AA)
+                cv2.circle(cdstP, (l[0], l[1]), 2, (0,255,0))
+                cv2.circle(cdstP, (l[2], l[3]), 2, (0,255,0))
+        cv2.imshow("centerline hough", cdstP)
 
-        cv2.imshow("img", sub)
-        cv2.imshow("warped", dst)
-        cv2.imshow("thresh", thresh)
-        cv2.imshow("line segments", cdstP)
+
         cv2.waitKey(1)
 
 
