@@ -2,6 +2,8 @@ import rclpy
 from rclpy.node import Node
 
 from std_msgs.msg import String
+from geometry_msgs.msg import Pose
+from geometry_msgs.msg import PoseArray
 
 import cv2
 import numpy as np
@@ -18,7 +20,10 @@ class LaneObserver(Node):
 
         # create publisher for 'topic'
         self.publisher_ = self.create_publisher(String, 'topic', 10)
-        
+
+        # create publisher for 'lanes'
+        self.lanePublisher_ = self.create_publisher(PoseArray, 'lanes', 10)
+
         # create timer for 'topic' publisher
         timer_period = 0.5  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
@@ -70,53 +75,78 @@ class LaneObserver(Node):
             [67  + 480, 231 + 720], 
             [225 + 480, 233 + 720]])
         pts2 = np.float32([             # destination points
-            [480,720], 
-            [800,720], 
-            [480,img_cv.shape[0]+720], 
-            [img_cv.shape[1]+480,img_cv.shape[0]+720]])
+            [480,640], 
+            [800,640], 
+            [480,960], 
+            [800,960]])
         M = cv2.getPerspectiveTransform(pts1,pts2)        # transformation matrix
-        dst = cv2.warpPerspective(sub, M, (1280, 960))
+        warp = cv2.warpPerspective(sub, M, (1280, 960))
 
-        dst = cv2.resize(dst, None, fx = 0.25, fy = 0.25)
-        dst = cv2.GaussianBlur(dst, (5, 5), 0)
-        cv2.imshow("warped", dst)
-
+        warp = cv2.resize(warp, (320, 240))
+        warp = cv2.GaussianBlur(warp, (5, 5), 0)
+        cv2.imshow("warped", warp)
 
         # find edges
-        edges = cv2.Canny(dst, 40, 150)
+        edges = cv2.Canny(warp, 40, 150)
         cv2.imshow("canny", edges)
 
-
-        # find lines thicker than minimum width
+        # connect edges to lines through dilation
         dilate = cv2.dilate(edges, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (10, 10)))
+
+        # remove lines thinner than minimum width through erosion
         erode = cv2.erode(dilate, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (16, 16)))
         cv2.imshow("dilate_erode", erode)
 
+        # dilate to connect dotted line into one contour
+        erode = cv2.dilate(erode, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (40, 40)))   
 
-        # find centerline between the two largest lines in the image
-        erode = cv2.dilate(erode, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (40, 40)))   # dilate to connect dotted line into one contour
+        # get remaining contours
         contours,_ = cv2.findContours(erode, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         if contours is None or len(contours) < 2:
             return
         
+        # determine centerline as overlap between the two largest lines
         contours = sorted(contours, key=lambda cnt: cv2.contourArea(cnt), reverse=True)[:2]
         img1 = np.zeros(erode.shape, dtype="uint8")
-        cv2.drawContours(img1, [contours[0]], 0, (255,255,255), 87)     # dilate to provoce an overlap with the other line
+        cv2.drawContours(img1, [contours[0]], 0, (255,255,255), 87)     # dilate to achieve an overlap with the other line
         img2 = np.zeros(erode.shape, dtype="uint8")
         cv2.drawContours(img2, [contours[1]], 0, (255,255,255), 87)     # dilate to achieve an overlap with the other line
         centerImg = cv2.ximgproc.thinning(img1 & img2, 0)               # binary AND to get only overlap region
         cv2.imshow("centerline", centerImg)
         
+        # get relevant line points
         linesP = cv2.HoughLinesP(centerImg, 1, np.pi / 360, 30, None, 30, 5)
-        cdstP = np.zeros((240, 320, 3), dtype="uint8")
-        if linesP is not None:
-            for i in range(0, len(linesP)):
-                l = linesP[i][0]
-                cv2.line(cdstP, (l[0], l[1]), (l[2], l[3]), (0,0,255), 1, cv2.LINE_AA)
-                cv2.circle(cdstP, (l[0], l[1]), 2, (0,255,0))
-                cv2.circle(cdstP, (l[2], l[3]), 2, (0,255,0))
-        cv2.imshow("centerline hough", cdstP)
+        if linesP is None:
+            return
+        
+        # collect line points into array
+        array = []
+        for line in linesP:
+            l = line[0]
+            array.append((l[0]-160, 240-l[1]))
+            array.append((l[2]-160, 240-l[3]))
 
+        array.sort(key=lambda pt: np.linalg.norm(pt))
+
+        # draw final points to image
+        final = np.zeros((240, 320, 3), dtype="uint8")
+        for i in range(len(array)):
+            pt1 = (array[i][0]+160, 240-array[i][1])
+            cv2.circle(final, pt1, 2, (0,0,255))
+            cv2.putText(final, str(i), pt1, cv2.FONT_HERSHEY_DUPLEX, 0.5, (255,255,0))
+            if i < len(array)-1:
+                pt2 = (array[i+1][0]+160, 240-array[i+1][1])
+                cv2.line(final, pt1, pt2, (0,255,0))
+        cv2.imshow("final points", final)
+
+        # publish points to 'lanes'
+        poseArr = PoseArray()
+        for pt in array:
+            pose = Pose()
+            pose.position.x = float(pt[0])
+            pose.position.y = float(pt[1])
+            poseArr.poses.append(pose)
+        self.lanePublisher_.publish(poseArr)
 
         cv2.waitKey(1)
 
