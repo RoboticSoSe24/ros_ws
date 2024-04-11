@@ -18,16 +18,8 @@ class LaneObserver(Node):
     def __init__(self):
         super().__init__('lane_observer')
 
-        # create publisher for 'topic'
-        self.publisher_ = self.create_publisher(String, 'topic', 10)
-
-        # create publisher for 'lanes'
+        # create publisher for topic 'lanes'
         self.lanePublisher_ = self.create_publisher(PoseArray, 'lanes', 10)
-
-        # create timer for 'topic' publisher
-        timer_period = 0.5  # seconds
-        self.timer = self.create_timer(timer_period, self.timer_callback)
-        self.i = 0
 
         # init openCV-bridge
         self.bridge = CvBridge()
@@ -50,21 +42,25 @@ class LaneObserver(Node):
         msg = String()
         msg.data = 'Hello World: %d' % self.i
         self.publisher_.publish(msg)
-        #self.get_logger().info('Publishing: "%s"' % msg.data)
+        self.get_logger().info('Publishing: "%s"' % msg.data)
         self.i += 1
 
 
     def image_callback(self, data):
+        imSize = (320, 240)
+        shape1C = (imSize[1], imSize[0], 1)
+        shape3C = (imSize[1], imSize[0], 3)
+
         # retrieve camera image
         img_cv = self.bridge.compressed_imgmsg_to_cv2(data, desired_encoding='passthrough')
-        img_cv = cv2.resize(img_cv, (320, 240))
+        img_cv = cv2.resize(img_cv, imSize)
 
         # get lightness channel
         img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2HLS)
         img_cv = cv2.split(img_cv)[1]
 
         # pad into bigger matrix
-        sub = np.zeros((960, 1280, 1), dtype = "uint8")
+        sub = np.zeros((shape1C[0]*4, shape1C[1]*4, 1), dtype = "uint8")
         sub[720:960, 480:800, 0] = img_cv
         cv2.imshow("padded src", sub)
 
@@ -80,9 +76,9 @@ class LaneObserver(Node):
             [480,960], 
             [800,960]])
         M = cv2.getPerspectiveTransform(pts1,pts2)        # transformation matrix
-        warp = cv2.warpPerspective(sub, M, (1280, 960))
+        warp = cv2.warpPerspective(sub, M, (imSize[0]*4, imSize[1]*4))
 
-        warp = cv2.resize(warp, (320, 240))
+        warp = cv2.resize(warp, imSize)
         warp = cv2.GaussianBlur(warp, (5, 5), 0)
         cv2.imshow("warped", warp)
 
@@ -107,14 +103,14 @@ class LaneObserver(Node):
         
         # determine centerline as overlap between the two largest lines
         contours = sorted(contours, key=lambda cnt: cv2.contourArea(cnt), reverse=True)[:2]
-        img1 = np.zeros(erode.shape, dtype="uint8")
+        img1 = np.zeros(shape1C, dtype="uint8")
         cv2.drawContours(img1, [contours[0]], 0, (255,255,255), 87)     # dilate to achieve an overlap with the other line
-        img2 = np.zeros(erode.shape, dtype="uint8")
+        img2 = np.zeros(shape1C, dtype="uint8")
         cv2.drawContours(img2, [contours[1]], 0, (255,255,255), 87)     # dilate to achieve an overlap with the other line
         centerImg = cv2.ximgproc.thinning(img1 & img2, 0)               # binary AND to get only overlap region
         cv2.imshow("centerline", centerImg)
         
-        # get relevant line points
+        # get line as segments
         linesP = cv2.HoughLinesP(centerImg, 1, np.pi / 360, 30, None, 30, 5)
         if linesP is None:
             return
@@ -129,7 +125,7 @@ class LaneObserver(Node):
         array.sort(key=lambda pt: np.linalg.norm(pt))
 
         # draw final points to image
-        final = np.zeros((240, 320, 3), dtype="uint8")
+        final = np.zeros(shape3C, dtype="uint8")
         for i in range(len(array)):
             pt1 = (array[i][0]+160, 240-array[i][1])
             cv2.circle(final, pt1, 2, (0,0,255))
