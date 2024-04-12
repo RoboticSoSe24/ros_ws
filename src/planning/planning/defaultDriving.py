@@ -19,7 +19,7 @@ class DefaultDriving(Node):
         self.declare_parameter('boundary_right', 12)
         self.declare_parameter('speed_drive', 0.1)
         self.declare_parameter('speed_turn', 0.35)
-        self.declare_parameter('scan_angle', 30)
+        self.declare_parameter('scan_angle', 60.0)
 
         # variable for the last sensor reading
         self.min_index = 0
@@ -77,19 +77,19 @@ class DefaultDriving(Node):
 
     # driving logic
     def timer_callback(self):
+        
+        distance_stop = self.get_parameter('distance_to_stop').get_parameter_value().double_value
+        boundary_left = self.get_parameter('boundary_left').get_parameter_value().integer_value
+        boundary_right = self.get_parameter('boundary_right').get_parameter_value().integer_value
+        speed_drive = self.get_parameter('speed_drive').get_parameter_value().double_value
+        speed_turn = self.get_parameter('speed_turn').get_parameter_value().double_value
+        scan_angle = self.get_parameter('scan_angle').get_parameter_value().double_value
+        if self.min_value < distance_stop and (self.min_index <= (scan_angle / 2) or self.min_index >= (360 - (scan_angle / 2))):
+            speed_drive = 0.0
+            speed_turn = 0.0
+            self.get_logger().info(str(self.min_value))
+
         if self.m is not None:
-            distance_stop = self.get_parameter('distance_to_stop').get_parameter_value().double_value
-            boundary_left = self.get_parameter('boundary_left').get_parameter_value().integer_value
-            boundary_right = self.get_parameter('boundary_right').get_parameter_value().integer_value
-            speed_drive = self.get_parameter('speed_drive').get_parameter_value().double_value
-            speed_turn = self.get_parameter('speed_turn').get_parameter_value().double_value
-            scan_angle = self.get_parameter('scan_angle').get_parameter_value().double_value
-
-            if self.min_value < distance_stop and (self.min_index <= (scan_angle / 2) or self.min_index >= (360 - (scan_angle / 2))):
-                speed_drive = 0.0
-                speed_turn = 0.0
-                self.get_logger().info(str(self.min_value))
-
             if self.m < boundary_left:
                 self.get_logger().info('Objekt={} // Index={} // links fahren!    m={}'.format(round(float(self.min_value), 2), self.min_index, self.m))
                 turn = speed_turn
