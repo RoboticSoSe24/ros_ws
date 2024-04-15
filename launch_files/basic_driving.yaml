@@ -2,12 +2,12 @@ launch:
 
 - node:
     pkg: "perception"
-    exec: "main"
+    exec: "laneObserver"
     name: "laneobserver"
     namespace: "basic_driving"
 
 - node:
     pkg: "planning"
-    exec: "main"
+    exec: "defaultDriving"
     name: "defaultdriving"
     namespace: "basic_driving"
