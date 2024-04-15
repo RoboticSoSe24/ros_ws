@@ -19,20 +19,18 @@ class DefaultDriving(Node):
         self.declare_parameter('boundary_right', 12)
         self.declare_parameter('speed_drive', 0.1)
         self.declare_parameter('speed_turn', 0.35)
-        self.declare_parameter('scan_angle', 60.0)
+        self.declare_parameter('scan_angle', 60)
 
         # variable for the last sensor reading
         self.min_index = 0
         self.min_value = 0.0
-
-        self.m = 0
         
         # definition of the QoS in order to receive data despite WiFi
         qos_policy = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
                                          history=rclpy.qos.HistoryPolicy.KEEP_LAST,
                                          depth=1)
         
-        # create subscribers
+        # create subscriber for laserscan ranges
         self.laser_subscription = self.create_subscription(
             LaserScan,
             'scan',
@@ -40,33 +38,42 @@ class DefaultDriving(Node):
             qos_profile=qos_policy)
         self.laser_subscription  
 
+        # create subscriber for road lanes
         self.lane_subscription = self.create_subscription(
             PoseArray,
-            'lanes',  # Name des Topics
+            'lanes',
             self.listener_callback,
             10)
         self.lane_subscription
-
         self.m = None
         
         # create publisher for driving commands
-        self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 1)
+        self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
         
         timer_period = 0.1  # seconds
         self.my_timer = self.create_timer(timer_period, self.timer_callback)
 
+        # create publisher for current action state
+        self.state_publisher = self.create_publisher(String, 'state', 1)
+        self.driving = True
+
+        self.get_logger().info('initialized defaultDriving')
+
 
     def scanner_callback(self, msg):
+        scan_angle = self.get_parameter('scan_angle').get_parameter_value().integer_value
+        
         laser_data = msg.ranges
-        self.min_value = float('inf') 
-        self.min_index = None
-        #finding the smallest value except from 0.0, but still counting the index
-        for i, x in enumerate(laser_data):
-            if x != 0.0 and x < self.min_value:
-                self.min_value = x
-                self.min_index = i
-        self.get_logger().info('laserscan callback')
 
+        self.min_value = float('inf')
+        self.min_index = 0
+
+        for i in range(-int(scan_angle/2), int(scan_angle/2)):
+            d = laser_data[i]
+            if d != 0.0 and d < self.min_value:
+                self.min_value = d
+                self.min_index = i
+            
 
     def listener_callback(self, msg):
         if len(msg.poses) >= 2:
@@ -75,42 +82,51 @@ class DefaultDriving(Node):
             self.m = (x1 + x2) / 2
             #self.get_logger().info('x={}'.format(self.m))
 
+
     # driving logic
     def timer_callback(self):
-        
-        distance_stop = self.get_parameter('distance_to_stop').get_parameter_value().double_value
-        boundary_left = self.get_parameter('boundary_left').get_parameter_value().integer_value
-        boundary_right = self.get_parameter('boundary_right').get_parameter_value().integer_value
-        speed_drive = self.get_parameter('speed_drive').get_parameter_value().double_value
-        speed_turn = self.get_parameter('speed_turn').get_parameter_value().double_value
-        scan_angle = self.get_parameter('scan_angle').get_parameter_value().double_value
-        if self.min_value < distance_stop and (self.min_index <= (scan_angle / 2) or self.min_index >= (360 - (scan_angle / 2))):
+        distance_stop   = self.get_parameter('distance_to_stop').get_parameter_value().double_value
+        boundary_left   = self.get_parameter('boundary_left').get_parameter_value().integer_value
+        boundary_right  = self.get_parameter('boundary_right').get_parameter_value().integer_value
+        speed_drive     = self.get_parameter('speed_drive').get_parameter_value().double_value
+        speed_turn      = self.get_parameter('speed_turn').get_parameter_value().double_value
+
+        if self.min_value < distance_stop:
             speed_drive = 0.0
             speed_turn = 0.0
-            self.get_logger().info(str(self.min_value))
+
+        if not self.driving and speed_drive > 0.0:
+            self.driving = True
+            msg = String()
+            msg.data = 'driving'
+            self.state_publisher.publish(msg)
+
+        if self.driving and speed_drive == 0.0:
+            self.driving = False
+            msg = String()
+            msg.data = 'stopping'
+            self.state_publisher.publish(msg)
 
         if self.m is not None:
             if self.m < boundary_left:
-                self.get_logger().info('Objekt={} // Index={} // links fahren!    m={}'.format(round(float(self.min_value), 2), self.min_index, self.m))
-                turn = speed_turn
+                self.get_logger().info('turn left (m = {})'.format(self.m))
             elif self.m > boundary_right:
-                self.get_logger().info('Objekt={} // Index={} // rechts fahren!   m={}'.format(round(float(self.min_value), 2), self.min_index, self.m))
-                turn = -speed_turn
+                self.get_logger().info('turn right (m = {})'.format(self.m))
+                speed_turn *= -1
             else: 
-                self.get_logger().info('Objekt={} // Index={} // geradaus fahren! m={}'.format(round(float(self.min_value), 2), self.min_index, self.m))
-                turn = 0.0
+                self.get_logger().info('drive straight (m = {})'.format(self.m))
+                speed_turn *= 0
 
             msg = Twist()
             msg.linear.x = speed_drive
-            msg.angular.z = turn
+            msg.angular.z = speed_turn
 
-            self.publisher_.publish(msg)
+            self.velocity_publisher.publish(msg)
         else:
-            self.get_logger().info('Keine gültigen Pose-Nachrichten erhalten')
+            self.get_logger().info('Did not receive valid lane messages')
 
 
 def main(args=None):
-    print("Hello, !!! DRIVE MODE active now!!! ;)")
     rclpy.init(args=args)
 
     default_driving = DefaultDriving()
