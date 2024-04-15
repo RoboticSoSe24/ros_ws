@@ -1,11 +1,14 @@
 # TUBAF_Robotik_24
 Repository for the summer semester 24 robotics course at the TU Freiberg 
 
-+ [Requirements](#requirements)
-+ [Packages](#packages)
-+ [Build](#build)
-+ [Run](#run)
-+ [Parameters](#parameters)
+- [TUBAF\_Robotik\_24](#tubaf_robotik_24)
+  - [Requirements](#requirements)
+  - [Packages](#packages)
+    - [Perception](#perception)
+    - [Planning](#planning)
+  - [Build](#build)
+    - [Run](#run)
+    - [Parameters](#parameters)
 
 ## Requirements
 The project has been set up to work with the 
@@ -27,21 +30,16 @@ Package for nodes connected to turtlebot motion planning
 ## Build
 In the workspace directory call:
 
-```colcon build```
+```
+colcon build
+```
 
 ### Run
 In the workspace directory call:
 
 ```
 source install/setup.bash
-ros2 run perception laneObserver
-```
-
-In another terminal navigate to the workspace directory and call:
-
-```
-source install/setup.bash
-ros2 run planning defaultDriving
+ros2 launch launch_files/basic_driving.yaml
 ```
 
 ### Parameters
