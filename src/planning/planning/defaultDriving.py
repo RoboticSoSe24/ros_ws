@@ -4,6 +4,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 
 from interfaces.msg import Lanes
+from interfaces.srv import FollowLane
 
 from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
@@ -58,6 +59,10 @@ class DefaultDriving(Node):
         # create publisher for current action state
         self.state_publisher = self.create_publisher(String, 'state', 1)
         self.driving = True
+
+        # create service to update lane following
+        self.lane_service = self.create_service(FollowLane, 'follow_lanes', 
+                                                self.follow_lanes_callback)
 
         self.get_logger().info('initialized defaultDriving')
 
@@ -126,6 +131,12 @@ class DefaultDriving(Node):
             self.velocity_publisher.publish(msg)
         else:
             self.get_logger().info('Did not receive valid lane messages')
+
+
+    # TODO: move driving logic here
+    def follow_lanes_callback(self):
+        self.get_logger().info(self.get_name() + 'service called')
+
 
 
 def main(args=None):

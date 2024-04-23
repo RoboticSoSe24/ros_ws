@@ -11,6 +11,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Lanes.msg"
+  "srv/FollowLane.srv"
   DEPENDENCIES geometry_msgs
 )
 
