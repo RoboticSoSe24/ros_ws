@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 
-from messages.msg import Lanes
+from interfaces.msg import Lanes
 from geometry_msgs.msg import Point
 
 import cv2

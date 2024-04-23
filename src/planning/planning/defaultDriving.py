@@ -3,7 +3,7 @@ from rclpy.node import Node
 
 from geometry_msgs.msg import Twist
 
-from messages.msg import Lanes
+from interfaces.msg import Lanes
 
 from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
