@@ -2,11 +2,13 @@ import rclpy
 from rclpy.node import Node
 
 from geometry_msgs.msg import Twist
-from geometry_msgs.msg import PoseArray
+
+from messages.msg import Lanes
 
 from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 import math
+
 
 class DefaultDriving(Node):
 
@@ -40,9 +42,9 @@ class DefaultDriving(Node):
 
         # create subscriber for road lanes
         self.lane_subscription = self.create_subscription(
-            PoseArray,
+            Lanes,
             'lanes',
-            self.listener_callback,
+            self.lanes_callback,
             10)
         self.lane_subscription
         self.m = None
@@ -75,12 +77,12 @@ class DefaultDriving(Node):
                 self.min_index = i
             
 
-    def listener_callback(self, msg):
-        if len(msg.poses) >= 2:
-            x1 = msg.poses[0].position.x
-            x2 = msg.poses[1].position.x
+    def lanes_callback(self, msg):
+        if len(msg.right) >= 2:
+            x1 = msg.right[0].x
+            x2 = msg.right[1].x
             self.m = (x1 + x2) / 2
-            #self.get_logger().info('x={}'.format(self.m))
+            self.get_logger().info('x={}'.format(self.m))
 
 
     # driving logic

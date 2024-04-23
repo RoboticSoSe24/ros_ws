@@ -1,13 +1,11 @@
 import rclpy
 from rclpy.node import Node
 
-from std_msgs.msg import String
-from geometry_msgs.msg import Pose
-from geometry_msgs.msg import PoseArray
+from messages.msg import Lanes
+from geometry_msgs.msg import Point
 
 import cv2
 import numpy as np
-import random as rng
 
 from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge, CvBridgeError
@@ -44,7 +42,7 @@ class LaneObserver(Node):
         self.subscription  # prevent unused variable warning
 
         # create publisher for topic 'lanes'
-        self.lanePublisher_ = self.create_publisher(PoseArray, 'lanes', 10)
+        self.lanePublisher_ = self.create_publisher(Lanes, 'lanes', 10)
 
         self.get_logger().info('initialized laneObserver')
 
@@ -153,14 +151,14 @@ class LaneObserver(Node):
                 cv2.line(canvas3C, pt1, pt2, (0,255,0))
         cv2.imshow("final points", canvas3C)
 
-        # publish points to 'lanes'
-        poseArr = PoseArray()
+        # publish points to 'lanes' topic
+        lanes = Lanes()
         for pt in array:
-            pose = Pose()
-            pose.position.x = float(pt[0])
-            pose.position.y = float(pt[1])
-            poseArr.poses.append(pose)
-        self.lanePublisher_.publish(poseArr)
+            point = Point()
+            point.x = float(pt[0])
+            point.y = float(pt[1])
+            lanes.right.append(point)
+        self.lanePublisher_.publish(lanes)
 
         cv2.waitKey(1)
 
