@@ -20,12 +20,13 @@ class DefaultDriving(Node):
         self.declare_parameter('boundary_left', -12)
         self.declare_parameter('boundary_right', 12)
         self.declare_parameter('speed_drive', 0.1)
-        self.declare_parameter('speed_turn', 0.35)
+        self.declare_parameter('speed_turn', 0.0055)
         self.declare_parameter('scan_angle', 60)
 
         # variable for the last sensor reading
         self.min_index = 0
         self.min_value = 0.0
+        self.last_value = 0.0
         
         # definition of the QoS in order to receive data despite WiFi
         qos_policy = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
@@ -48,11 +49,21 @@ class DefaultDriving(Node):
             10)
         self.lane_subscription
         self.m = None
-        
+
+        # create subscriber for road lanes
+        self.speed_lane_subscription = self.create_subscription(
+            Lanes,
+            'lanes',
+            self.speed_adjusment_callback,
+            10)
+        self.speed_lane_subscription
+        self.x_sum = 0
+
+
         # create publisher for driving commands
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
         
-        timer_period = 0.1  # seconds
+        timer_period = 0.2  # secondsspeed_adjusment_callback
         self.my_timer = self.create_timer(timer_period, self.timer_callback)
 
         # create publisher for current action state
@@ -78,11 +89,23 @@ class DefaultDriving(Node):
             
 
     def lanes_callback(self, msg):
-        if len(msg.right) >= 2:
+        if len(msg.right) >= 3:
             x1 = msg.right[0].x
             x2 = msg.right[1].x
-            self.m = (x1 + x2) / 2
+            x3 = msg.right[2].x
+            self.m = (x1 + x2 + x3) / 3
             self.get_logger().info('x={}'.format(self.m))
+
+    def speed_adjusment_callback(self, msg):
+            self.x_sum = 0
+            num_x_values = len(msg.right)
+            if num_x_values > 0:
+                for lane_point in msg.right:
+                    self.x_sum += abs(lane_point.x)
+                self.x_sum = self.x_sum / num_x_values
+                self.get_logger().info('x={}'.format(self.x_sum))
+            else:
+                self.x_sum = None
 
 
     # driving logic
@@ -90,12 +113,17 @@ class DefaultDriving(Node):
         distance_stop   = self.get_parameter('distance_to_stop').get_parameter_value().double_value
         boundary_left   = self.get_parameter('boundary_left').get_parameter_value().integer_value
         boundary_right  = self.get_parameter('boundary_right').get_parameter_value().integer_value
-        speed_drive     = self.get_parameter('speed_drive').get_parameter_value().double_value
+        #speed_drive     = self.get_parameter('speed_drive').get_parameter_value().double_value
         speed_turn      = self.get_parameter('speed_turn').get_parameter_value().double_value
+
+        turn = ((self.x_sum * speed_turn) + self.last_value) / 2
+        self.last_value = turn
+
+        speed_drive = (1 / (self.x_sum + 100)) * 15
 
         if self.min_value < distance_stop:
             speed_drive = 0.0
-            speed_turn = 0.0
+            turn = 0.0
 
         if not self.driving and speed_drive > 0.0:
             self.driving = True
@@ -109,20 +137,26 @@ class DefaultDriving(Node):
             msg.data = 'stopping'
             self.state_publisher.publish(msg)
 
+        #self.get_logger().info('x_sum= {})'.format(self.x_sum))
+        #self.get_logger().info('Drive Speed: {} '.format(speed_drive))
+
+
         if self.m is not None:
             if self.m < boundary_left:
                 self.get_logger().info('turn left (m = {})'.format(self.m))
             elif self.m > boundary_right:
+                turn *= -1
                 self.get_logger().info('turn right (m = {})'.format(self.m))
-                speed_turn *= -1
             else: 
+                turn *= 0
                 self.get_logger().info('drive straight (m = {})'.format(self.m))
-                speed_turn *= 0
+        
 
+            
             msg = Twist()
             msg.linear.x = speed_drive
-            msg.angular.z = speed_turn
-
+            msg.angular.z = turn
+        
             self.velocity_publisher.publish(msg)
         else:
             self.get_logger().info('Did not receive valid lane messages')
