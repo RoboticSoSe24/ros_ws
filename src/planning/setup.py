@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'defaultDriving = planning.defaultDriving:main'
+            'defaultDriving = planning.defaultDriving:main',
+            'stateController = planning.stateController:main'
         ],
     },
 )

@@ -7,6 +7,11 @@ launch:
 
 - node:
     pkg: "planning"
+    exec: "stateController"
+    name: "stateController"
+
+- node:
+    pkg: "planning"
     exec: "defaultDriving"
     name: "defaultdriving"
     
