@@ -21,7 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             'defaultDriving = planning.defaultDriving:main',
-            'stateController = planning.stateController:main'
+            'stateController = planning.stateController:main',
+            'obstruction = planning.obstruction:main'
         ],
     },
 )
