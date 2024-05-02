@@ -17,10 +17,12 @@ class LaneObserver(Node):
         super().__init__('lane_observer')
 
         # declare parameters
-        self.declare_parameter('canny_threshold', 50.0)
-        self.declare_parameter('line_width', 16)
+        self.declare_parameter('canny_threshold', 40.0)
+        self.declare_parameter('line_width', 8)
+        self.declare_parameter('line_tolerance', 4)
         self.declare_parameter('lane_width', 130)
-        self.declare_parameter('dot_line_length', 30)
+        self.declare_parameter('dot_line_length', 20)
+        self.declare_parameter('dot_line_tolerance', 5)
 
         # create timer for updating parameter values
         self.parameterTimer = self.create_timer(3, self.parameter_callback)
@@ -50,10 +52,12 @@ class LaneObserver(Node):
 
     def parameter_callback(self):
         # fetch parameters
-        self.canny_threshold = self.get_parameter('canny_threshold').get_parameter_value().double_value
-        self.line_width      = self.get_parameter('line_width').get_parameter_value().integer_value
-        self.lane_width      = self.get_parameter('lane_width').get_parameter_value().integer_value
-        self.dot_line_length = self.get_parameter('dot_line_length').get_parameter_value().integer_value
+        self.canny_threshold    = self.get_parameter('canny_threshold').get_parameter_value().double_value
+        self.line_width         = self.get_parameter('line_width').get_parameter_value().integer_value
+        self.line_tolerance     = self.get_parameter('line_tolerance').get_parameter_value().integer_value
+        self.lane_width         = self.get_parameter('lane_width').get_parameter_value().integer_value
+        self.dot_line_length    = self.get_parameter('dot_line_length').get_parameter_value().integer_value
+        self.dot_line_tolerance = self.get_parameter('dot_line_tolerance').get_parameter_value().integer_value
         self.get_logger().info('parameters updated')
 
 
@@ -70,134 +74,141 @@ class LaneObserver(Node):
         img_cv = cv2.split(img_cv)[1]
         cv2.imshow("source", img_cv)
 
+        # undistort image
+        img_cv = self.__undistort(img_cv)
+
         # warp perspective
         warp = self.__perspective_transform(img_cv, imSize)
 
         # filter for line segments with the correct width
         filter = self.__filter_line_width(warp)
 
-        # connect line segments into lines
-        connect = self.__connect_lines(filter)
+        # try to find the middle line
+        found_dotted, dotted = self.__find_dotted_line(filter)
 
-
-        # find all remaining contours
-        contours,_ = cv2.findContours(connect, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        if contours is None or len(contours) < 2:
+        if found_dotted:
+            dotted = cv2.dilate(dotted, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.lane_width, self.lane_width)))
+            lanesImg = cv2.dilate(dotted, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))) & ~dotted
+            cv2.imshow("left and right lanes", lanesImg)
             cv2.waitKey(1)
-            return
 
-        # convert to array of tupels with number of pixels and pixel ratio        
-        temp = []
-        canvas3C = np.zeros(shape3C, dtype='uint8')
-        for cnt in contours:
+        else:
+            # connect line segments into lines
+            connect = self.__connect_lines(filter)
+
+            # find all remaining contours
+            contours,_ = cv2.findContours(connect, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            if contours is None or len(contours) < 2:
+                return
+
+            # convert to array of tupels with number of pixels and pixel ratio        
+            temp = []
+            for cnt in contours:
+                img1 = np.zeros(shape1C[:2], dtype='uint8')
+                cv2.drawContours(img1, [cnt], 0, (255,255,255), 6)
+                pixelsConnected = np.sum(img1 == 255)
+
+                img2 = cv2.dilate(filter, cv2.getStructuringElement(cv2.MORPH_RECT, (6, 6)))
+                img2 &= img1
+                pixelsDotted = np.sum(img2 == 255)
+
+                temp.append((cnt, pixelsConnected, pixelsDotted / pixelsConnected))
+                
+            # keep 2 largest contours
+            self.get_logger().info('temp length: ' + str(len(temp)))
+            if temp is None:
+                self.get_logger().info('temp is none')
+            contours = sorted(temp, key=lambda cnt: cnt[1], reverse=True)[:2]
+
+            # get centerline between two largest contours
             img1 = np.zeros(shape1C[:2], dtype='uint8')
-            cv2.drawContours(img1, [cnt], 0, (255,255,255), 6)
-            pixelsConnected = np.sum(img1 == 255)
-
-            img2 = cv2.dilate(filter, cv2.getStructuringElement(cv2.MORPH_RECT, (6, 6)))
-            img2 &= img1
-            pixelsDotted = np.sum(img2 == 255)
-
-            temp.append((cnt, pixelsConnected, pixelsDotted / pixelsConnected))
-            
-            canvas3C[:,:,0] += img1
-            canvas3C[:,:,1] += img2
-
-            x,y,w,h = cv2.boundingRect(cnt)
-            cv2.putText(canvas3C, str(int(temp[-1][2] * 100)), 
-                        (x+int(w/4),y+int(h/2)), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0,0,255))
-        
-        contours = temp
-        cv2.imshow("contour fill ratios", canvas3C)
-
-
-        # keep 3 largest contours
-        contours = sorted(contours, key=lambda cnt: cnt[1], reverse=True)[:3]
-        while len(contours) < 3:
-            contours.append(([(0,0)], 0, 0))
-
-
-        img1 = np.zeros(shape1C[:2], dtype='uint8')
-        cv2.drawContours(img1, [contours[0][0]], 0, (255,255,255), self.lane_width)     # dilate to achieve an overlap with the other line
-        img2 = np.zeros(shape1C[:2], dtype='uint8')
-        cv2.drawContours(img2, [contours[1][0]], 0, (255,255,255), self.lane_width)   # dilate to achieve an overlap with the other line
-        centerImg = cv2.ximgproc.thinning(img1 & img2, 0)                           # binary AND to get only overlap region
-        cv2.rectangle(centerImg, (0,0), imSize, (0,0,0), 2)                         # mask out points on the edges of the image 
-        canvas3C[:,:,0] = img1 * 0.5 + (img1 & img2) * 0.25
-        canvas3C[:,:,1] = img2 * 0.5 + (img1 & img2) * 0.25
-        canvas3C[:,:,2] = centerImg
-        cv2.imshow("contour 1, contour 2, centerline", canvas3C)
-
-
-        # move dotted line to the front
-        if (0.6 > contours[1][2]) and (contours[1][2] > 0.4):
-            temp = contours[1]
-            contours[1] = contours[0]
-            contours[0] = temp
-        elif (0.6 > contours[2][2]) and (contours[2][2] > 0.4):
-            temp = contours[2]
-            contours[2] = contours[1]
-            contours[1] = contours[0]
-            contours[0] = temp
-
-
-        linesP = cv2.HoughLinesP(centerImg, 1, np.pi / 360, 30, None, 30, 5)    # get line as segments
-        if linesP is None:
+            cv2.drawContours(img1, [contours[0][0]], 0, (255,255,255), self.lane_width) # dilate to achieve an overlap with the other line
+            img2 = np.zeros(shape1C[:2], dtype='uint8')
+            cv2.drawContours(img2, [contours[1][0]], 0, (255,255,255), self.lane_width) # dilate to achieve an overlap with the other line
+            centerImg = cv2.ximgproc.thinning(img1 & img2, 0)                           # binary AND to get only overlap region
+            cv2.rectangle(centerImg, (0,0), imSize, (0,0,0), 2)                         # mask out points on the edges of the image 
+            canvas3C = np.zeros(shape3C, dtype='uint8')
+            canvas3C[:,:,0] = img1 * 0.5 + (img1 & img2) * 0.25
+            canvas3C[:,:,1] = img2 * 0.5 + (img1 & img2) * 0.25
+            canvas3C[:,:,2] = centerImg
+            cv2.imshow("contour 1, contour 2, centerline", canvas3C)
             cv2.waitKey(1)
-            return
-        
-        # collect line points into array
-        array = []
-        for line in linesP:
-            l = line[0]
-            array.append((l[0]-160, 240-l[1]))
-            array.append((l[2]-160, 240-l[3]))
 
-        array.sort(key=lambda pt: np.linalg.norm(pt))
+            # get line segments from pixels
+            linesP = cv2.HoughLinesP(centerImg, 1, np.pi / 360, 30, None, 30, 5)    # get line as segments
+            if linesP is None:
+                return
+            
+            # collect line points into array
+            array = []
+            for line in linesP:
+                l = line[0]
+                array.append((l[0]-160, 240-l[1]))
+                array.append((l[2]-160, 240-l[3]))
 
-        # draw final points to image
-        canvas3C = np.zeros(shape3C, dtype='uint8')
-        for i in range(len(array)):
-            pt1 = (array[i][0]+160, 240-array[i][1])
-            cv2.circle(canvas3C, pt1, 2, (0,0,255))
-            cv2.putText(canvas3C, str(i), pt1, cv2.FONT_HERSHEY_DUPLEX, 0.5, (255,255,0))
-            if i < len(array)-1:
-                pt2 = (array[i+1][0]+160, 240-array[i+1][1])
-                cv2.line(canvas3C, pt1, pt2, (0,255,0))
-        cv2.imshow("final points", canvas3C)
+            array.sort(key=lambda pt: np.linalg.norm(pt))
 
-        # publish points to 'lanes' topic
-        lanes = Lanes()
-        for pt in array:
-            point = Point()
-            point.x = float(pt[0])
-            point.y = float(pt[1])
-            lanes.right.append(point)
-        self.lanePublisher_.publish(lanes)
+            # draw final points to image
+            canvas3C = np.zeros(shape3C, dtype='uint8')
+            for i in range(len(array)):
+                pt1 = (array[i][0]+160, 240-array[i][1])
+                cv2.circle(canvas3C, pt1, 2, (0,0,255))
+                cv2.putText(canvas3C, str(i), pt1, cv2.FONT_HERSHEY_DUPLEX, 0.5, (255,255,0))
+                if i < len(array)-1:
+                    pt2 = (array[i+1][0]+160, 240-array[i+1][1])
+                    cv2.line(canvas3C, pt1, pt2, (0,255,0))
+            cv2.imshow("final points", canvas3C)
+            cv2.waitKey(1)
 
-        cv2.waitKey(1)
+            # publish points to 'lanes' topic
+            lanes = Lanes()
+            for pt in array:
+                point = Point()
+                point.x = float(pt[0])
+                point.y = float(pt[1])
+                lanes.right.append(point)
+            self.lanePublisher_.publish(lanes)
+
+
+    def __undistort(self, img, debug_img=True):
+        img = cv2.resize(img, (640, 480))
+        self.camera_matrix = np.array( [[426.583512, 0.000000,   308.964505],
+                                        [0.000000,   814.271722, 223.209438],
+                                        [0.0,        0.0,        1.0]])        
+        self.camera_distortion = np.array([[-0.477731, 0.162638, 0.005566, -0.003685, 0.000000]])
+        self.camera_optimal_matrix, self.camera_optimal_roi = cv2.getOptimalNewCameraMatrix(self.camera_matrix, 
+                                                                                            self.camera_distortion, 
+                                                                                            (640, 480), 1)
+
+        img = cv2.undistort(img, self.camera_matrix, self.camera_distortion, None, self.camera_optimal_matrix)
+
+        # show debug visuals
+        if debug_img:
+            cv2.imshow("undistorted", img)
+            cv2.waitKey(1)
+
+        return img
 
 
     def __perspective_transform(self, img, out_size=(320, 240), debug_img=True):
-        img = cv2.resize(img, (320, 240))
+        r = img.shape[0]
+        c = img.shape[1]
+        sub = np.zeros((4*r, 4*c), dtype='uint8')
+        sub[3*r:4*r, int(1.5*c):int(2.5*c)] = img
 
-        # pad into bigger matrix
-        sub = np.zeros((960, 1280, 1), dtype='uint8')
-        sub[720:960, 480:800, 0] = img
-
-        # perspective transform
-        pts1 = np.float32([             # source points (measured prior)
-            [104 + 480, 178 + 720], 
-            [191 + 480, 178 + 720], 
-            [67  + 480, 231 + 720], 
-            [225 + 480, 233 + 720]])
+        k = c / 640
+        pts1 = np.float32([             # undistorted source points
+            [k*231 + 1.5*c, k*324 + 3*r], 
+            [k*350 + 1.5*c, k*322 + 3*r], 
+            [k*161 + 1.5*c, k*426 + 3*r], 
+            [k*412 + 1.5*c, k*419 + 3*r]])
         pts2 = np.float32([             # destination points
-            [480, 640], 
-            [800, 640], 
-            [480, 960], 
-            [800, 960]])
-        M = cv2.getPerspectiveTransform(pts1,pts2)        # transformation matrix
-        warp = cv2.warpPerspective(sub, M, (1280, 960))
+            [1.5*c, 4*r-c], 
+            [2.5*c, 4*r-c], 
+            [1.5*c, 4*r], 
+            [2.5*c, 4*r]])
+        M = cv2.getPerspectiveTransform(pts1, pts2)
+        warp = cv2.warpPerspective(sub, M, (4*c, 4*r))
 
         warp = cv2.resize(warp, out_size)
         warp = cv2.GaussianBlur(warp, (5, 5), 0)
@@ -221,21 +232,23 @@ class LaneObserver(Node):
 
         # connect close enough edges to lines through dilation
         dilate = cv2.dilate(edges, cv2.getStructuringElement(                   
-            cv2.MORPH_ELLIPSE, (int(self.line_width/2), int(self.line_width/2))))  
+            cv2.MORPH_ELLIPSE, (self.line_width, self.line_width)))  
         
         # prevent connections to the edges of the image
         cv2.rectangle(dilate, (0,0), (dilate.shape[1]-1, dilate.shape[0]-1), (0,0,0), 1)
 
-        # remove lines thinner than minimum width by eroding from empty spots
-        erode = cv2.erode(dilate, cv2.getStructuringElement(                    
-            cv2.MORPH_ELLIPSE, (self.line_width-2, self.line_width-2)))   
 
-        # remove lines thinner than minimum width by eroding from the edges        
-        #dilate &= ~edges
-        #erode = cv2.erode(dilate, cv2.getStructuringElement(
-        #    cv2.MORPH_ELLIPSE, (int(self.line_width/2)-2, int(self.line_width/2)-2)))
+        # remove lines thinner than minimum width through multiple erosion steps
+        # 1. erode original dilation
+        erode = cv2.erode(dilate, cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (self.line_width, self.line_width)))
+        # 2. remove edges
+        erode &= ~edges
+        # 3. erode further to remove lines thinner than desired
+        erode = cv2.erode(erode, cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (self.line_width - self.line_tolerance, self.line_width - self.line_tolerance)))
 
-        # filter out point like artifacts
+        # remove very small leftovers
         filter = cv2.boxFilter(erode, -1, (5, 5))
         _,filter = cv2.threshold(filter, 50, 255, cv2.THRESH_BINARY)
 
@@ -249,6 +262,74 @@ class LaneObserver(Node):
             cv2.waitKey(1)
 
         return filter
+
+
+    def __find_dotted_line(self, img, debug_img=True):
+        # get all contours in the image
+        contours,_ = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        if contours is None:
+            return False, None
+
+        # find promising line segments among contours
+        canvas = np.zeros((img.shape[0], img.shape[1], 3), dtype='uint8')
+        segments = []
+        for cnt in contours:
+            ptMax = max(cnt, key=lambda pt: pt[0][1])[0]
+            ptMin = min(cnt, key=lambda pt: pt[0][1])[0]
+            d = np.linalg.norm(ptMin - ptMax)
+            if d > self.dot_line_length - self.dot_line_tolerance and d < self.dot_line_length + self.dot_line_tolerance:
+                cv2.drawContours(canvas, [cnt], 0, (0,0,255))
+                cv2.putText(canvas, str(d), ptMax, cv2.FONT_HERSHEY_DUPLEX, 0.5, (255,255,255))
+                segments.append((ptMin, ptMax, (ptMin - ptMax) / d))
+                cv2.line(canvas, ptMin, np.int32(ptMin + segments[-1][2] * 10), (0, 255, 0))
+
+        if len(segments) < 1:
+            return False, None
+
+        segments.sort(key=lambda seg: seg[0][1], reverse=True)          # sort bottom up
+
+        # starting from each line segment try to form one single line
+        lines = []
+        for i in range(len(segments)):
+            # starting segment should be in the bottom half of the image
+            if segments[i][0][1] < img.shape[0] / 2:
+                continue
+            line = [segments[i]]
+            for seg in segments[i+1:]:
+                # add on line segments with a minimum distance and deviation from the previous segment
+                dev = np.linalg.norm(np.cross(line[-1][1]-line[-1][0], line[-1][0]-seg[1])) / np.linalg.norm(line[-1][1]-line[-1][0])
+                dot = np.dot(line[-1][2], seg[2])
+                dist = np.linalg.norm(line[-1][0] - seg[1])
+                if dev < self.dot_line_length and dot > 0.90 and dist > self.dot_line_length:
+                    line.append(seg)
+            lines.append(line)
+
+        if len(lines) == 0:
+            return False, None
+
+        # finally select line that most segments were assigned to
+        lines.sort(key=lambda line: len(line), reverse=True)
+        line = lines[0]
+
+        # draw final line
+        lineImg = np.zeros(img.shape[:2], dtype='uint8')
+        for i in range(len(line)):
+            seg = line[i]
+            cv2.line(lineImg, seg[0], seg[1], (255,255,255))    # draw segment
+            if i == 0:                                          # extend first segment out the bottom
+                cv2.line(lineImg, seg[1], np.int32(seg[1] - seg[2] * 1000), (255,255,255))
+            if i > 0:                                           # connect with previous segment
+                cv2.line(lineImg, seg[1], line[i-1][0], (255,255,255))
+            if i == len(line)-1:                                # extent last segment out the top
+                cv2.line(lineImg, seg[0], np.int32(seg[1] + seg[2] * 1000), (255,255,255))
+
+        # show debug visuals
+        if debug_img:
+            canvas[:,:,1] = lineImg
+            cv2.imshow("dotted line", canvas)
+            cv2.waitKey(1)
+
+        return True, lineImg
 
 
     def __connect_lines(self, img, debug_img=True):
