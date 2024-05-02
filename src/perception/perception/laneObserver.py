@@ -18,9 +18,9 @@ class LaneObserver(Node):
 
         # declare parameters
         self.declare_parameter('canny_threshold', 40.0)
-        self.declare_parameter('line_width', 8)
+        self.declare_parameter('line_width', 9)
         self.declare_parameter('line_tolerance', 4)
-        self.declare_parameter('lane_width', 130)
+        self.declare_parameter('lane_width', 170)
         self.declare_parameter('dot_line_length', 20)
         self.declare_parameter('dot_line_tolerance', 5)
 
@@ -92,7 +92,7 @@ class LaneObserver(Node):
             cv2.imshow("left and right lanes", lanesImg)
             cv2.waitKey(1)
 
-        else:
+        if True:
             # connect line segments into lines
             connect = self.__connect_lines(filter)
 
@@ -115,9 +115,6 @@ class LaneObserver(Node):
                 temp.append((cnt, pixelsConnected, pixelsDotted / pixelsConnected))
                 
             # keep 2 largest contours
-            self.get_logger().info('temp length: ' + str(len(temp)))
-            if temp is None:
-                self.get_logger().info('temp is none')
             contours = sorted(temp, key=lambda cnt: cnt[1], reverse=True)[:2]
 
             # get centerline between two largest contours
