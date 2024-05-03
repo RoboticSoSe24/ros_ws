@@ -38,7 +38,7 @@ class DefaultDriving(Node):
         # create publisher for driving commands
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
         
-        timer_period = 0.2  # secondsspeed_adjusment_callback
+        #timer_period = 0.2  # secondsspeed_adjusment_callback
         #self.my_timer = self.create_timer(timer_period, self.timer_callback)
 
         # create publisher for current action state

@@ -1,21 +1,27 @@
 import rclpy
 from rclpy.node import Node
-
-from interfaces.msg import Lanes
+from interfaces.srv import FollowLane
 
 from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 
+import time
 
 class obstruction(Node):
     def __init__(self):
         super().__init__('obstruction')
 
+        self.declare_parameter('obstical_angle', 70.0)
+        self.declare_parameter('buffer', 5.0)
+        self.declare_parameter('object_distance', 0.4)
+
         # variable for the last sensor reading
-        self.min_index = 0
-        self.min_value = 0.0
-        
+        self.right_object = True
+        self.did_turn = False
+
+        self.m = None
+
         # definition of the QoS in order to receive data despite WiFi
         qos_policy = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
                                          history=rclpy.qos.HistoryPolicy.KEEP_LAST,
@@ -28,72 +34,119 @@ class obstruction(Node):
             self.scanner_callback,
             qos_profile=qos_policy)
         self.laser_subscription
-
-        # create subscriber for road lanes
-        self.lane_subscription = self.create_subscription(
-            Lanes,
-            'lanes',
-            self.lanes_callback,
-            10)
-        self.m = None
         
         # create publisher for driving commands
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
+
         timer_period = 0.1  # seconds
         self.my_timer = self.create_timer(timer_period, self.follow_and_switch)
 
-        # create publisher for current action state
-        self.state_publisher = self.create_publisher(String, 'state', 1)
-        self.driving = True
+        # create client to call default driving
+        self.driving_client = self.create_client(FollowLane, 'follow_lanes')
 
         self.get_logger().info('initialized obstruction')
 
 
 
-    def scanner_callback(self, msg):
-        laser_data = msg.ranges #array of all laser data
+    def scanner_callback(self, msg, request, response):
+        obstical_angle = self.get_parameter('obstical_angle').get_parameter_value().double_value
+        object_distance = self.get_parameter('object_distance').get_parameter_value().double_value
+        buffer = self.get_parameter('buffer').get_parameter_value().double_value
 
-        #ckeck here if object is still on the right lane
+        sum_for_True = 0
+        laser_data = msg.ranges  # array of all laser data
 
+        for i in range(280 - int(obstical_angle / 2), 280 + int(obstical_angle / 2)):
+            if laser_data[i] < object_distance and laser_data[i] != 0.0:
+                sum_for_True += 1
 
-
-    def lanes_callback(self, msg):
-
-        #average of first three points to determinate on if to turn or not
-        if len(msg.right) >= 3:
-            x1 = msg.right[0].x
-            x2 = msg.right[1].x
-            x3 = msg.right[2].x
-            self.m = (x1 + x2 + x3) / 3
-            self.get_logger().info('x={}'.format(self.m))
+        if sum_for_True > buffer:
+            self.right_object = True
         else:
-            self.m = None
+            self.right_object = False
 
-        #abs average summ of all values -> drive slow or fast
-        self.x_sum = 0
-        num_x_values = len(msg.right)
-        if num_x_values > 0:
-            for lane_point in msg.right:
-                self.x_sum += abs(lane_point.x)
-            self.x_sum = self.x_sum / num_x_values
-        else:
-            self.x_sum = None
-
-        self.get_logger().info('initialized lanes_callback')
-
-
-
-    def follow_and_switch(self):
-        speed = 0.0
-        turn = 0.0
-
-        #driving logic here to switch lanes 
-        #and stay on lane once switched (see follow_lanes_callback in DeflaultDriving)
         
+    def follow_and_switch(self):
+
         msg = Twist()
-        msg.linear.x = speed
-        msg.angular.z = turn
-        self.velocity_publisher.publish(msg)
+        if self.did_turn == False:
+            self.get_logger().info('Left Turn')
+            #drehe um 90 Grad nach links
+            speed = 0.0
+            msg.linear.x = speed
+            msg.angular.z = 0.82
+            self.velocity_publisher.publish(msg)
+            time.sleep(2)
+
+            #fahre danach für 20 cm nach vorn
+            speed = 0.12
+            msg.linear.x = speed
+            msg.angular.z = 0.0
+            self.velocity_publisher.publish(msg)
+            time.sleep(2)
+
+            #drehe un 90 Grad nach rechts
+            speed = 0.0
+            msg.linear.x = speed
+            msg.angular.z = -0.82
+            self.velocity_publisher.publish(msg)
+            time.sleep(2)
+
+            #fahre neben die Box
+            speed = 0.15
+            msg.linear.x = speed
+            msg.angular.z = 0.0
+            self.velocity_publisher.publish(msg)
+            time.sleep(1)
+
+            speed = 0.0
+            msg.angular.z = 0.0
+            self.velocity_publisher.publish(msg)
+
+            self.did_turn = True
+               
+        if self.right_object == True:
+            self.get_logger().info('Enter default Driving')
+            req = FollowLane.Request()
+            req.right_lane = True
+            future = self.driving_client.call_async(req)
+            future.done()       
+        else: 
+            #msg = Twist()
+            speed = 0.0
+            msg.angular.z = 0.0
+            self.velocity_publisher.publish(msg)
+
+            self.get_logger().info('Right Turn')
+            #drehe um 90 Grad nach rechts
+            speed = 0.0
+            
+            msg.linear.x = speed
+            msg.angular.z = -0.82
+            self.velocity_publisher.publish(msg)
+            time.sleep(2)
+
+            #fahre danach für 20 cm nach vorn
+            speed = 0.15
+            msg.linear.x = speed
+            msg.angular.z = 0.0
+            self.velocity_publisher.publish(msg)
+            time.sleep(2)
+
+            #drehe un 90 Grad nach links
+            speed = 0.0
+            msg.linear.x = speed
+            msg.angular.z = 0.82
+            self.velocity_publisher.publish(msg)
+            time.sleep(2)
+
+            speed = 0.0
+            msg.angular.z = 0.0
+            self.velocity_publisher.publish(msg)
+        
+            self.did_turn = False
+
+            return response
 
 
 def main(args=None):
