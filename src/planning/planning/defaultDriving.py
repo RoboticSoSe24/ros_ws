@@ -17,7 +17,7 @@ class DefaultDriving(Node):
         # definition of the parameters that can be changed at runtime
         self.declare_parameter('boundary_left', -12)
         self.declare_parameter('boundary_right', 12)
-        self.declare_parameter('speed_drive', 0.1)
+        self.declare_parameter('speed_drive', 0.15)
         self.declare_parameter('speed_turn', 0.0055)
         
         # definition of the QoS in order to receive data despite WiFi
@@ -77,21 +77,22 @@ class DefaultDriving(Node):
 
         if self.m is not None:
             if self.m < boundary_left:
-                self.get_logger().info('turn left (m = {})'.format(self.m))
+                turn *= 1
+                #self.get_logger().info('turn left (m = {})'.format(self.m))
             elif self.m > boundary_right:
                 turn *= -1
-                self.get_logger().info('turn right (m = {})'.format(self.m))
+                #self.get_logger().info('turn right (m = {})'.format(self.m))
             else: 
                 turn *= 0
-                self.get_logger().info('drive straight (m = {})'.format(self.m))
+                #self.get_logger().info('drive straight (m = {})'.format(self.m))
 
             msg = Twist()
             msg.linear.x = speed_drive
             msg.angular.z = turn
             self.velocity_publisher.publish(msg)
 
-        else:
-            self.get_logger().info('Did not receive valid lane messages')
+        #else:
+            #self.get_logger().info('Did not receive valid lane messages')
 
         return response
 

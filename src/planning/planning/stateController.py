@@ -10,6 +10,7 @@ from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 
 import time
+from os import system
 
 
 class StateController(Node):
@@ -19,7 +20,7 @@ class StateController(Node):
 
         # definition of the parameters that can be changed at runtime
         self.declare_parameter('distance_to_stop', 0.3)
-        self.declare_parameter('scan_angle', 60)
+        self.declare_parameter('scan_angle', 80)
 
         # variable for the last sensor reading
         self.min_index = 0
@@ -74,6 +75,8 @@ class StateController(Node):
                 self.min_value = d
                 self.min_index = i
 
+        self.get_logger().info(str(laser_data))
+
 
     # check necessity for state updates
     def timer_callback(self):
@@ -87,10 +90,14 @@ class StateController(Node):
         # check whether to enter a different behavioral state
 
         if self.min_value < distance_stop:              # overtake obstruction
-            self.get_logger().info('calling overtake ' + str(self.min_value))
+            self.get_logger().info('calling overtake')
             req = OvertakeObstruction.Request()
             req.distance = distance_stop
-            self.future = self.obstruction_client.call_async(req)
+            #self.future = self.obstruction_client.call_async(req)
+            system('ros2 run planning obstruction')
+            self.get_logger().info('called obstruction')
+            self.min_value = float('inf')
+            
             state_msg.data = 'overtake obstruction'
 
         else:                                           # default driving

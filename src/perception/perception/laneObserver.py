@@ -21,7 +21,7 @@ class LaneObserver(Node):
         self.declare_parameter('line_width', 9)
         self.declare_parameter('line_tolerance', 4)
         self.declare_parameter('lane_width', 170)
-        self.declare_parameter('dot_line_length', 20)
+        self.declare_parameter('dot_line_length', 25)
         self.declare_parameter('dot_line_tolerance', 5)
 
         # create timer for updating parameter values
