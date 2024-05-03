@@ -195,8 +195,8 @@ class LaneObserver(Node):
 
         k = c / 640
         pts1 = np.float32([             # undistorted source points
-            [k*231 + 1.5*c, k*324 + 3*r], 
-            [k*350 + 1.5*c, k*322 + 3*r], 
+            [k*228 + 1.5*c, k*324 + 3*r], 
+            [k*353 + 1.5*c, k*322 + 3*r], 
             [k*161 + 1.5*c, k*426 + 3*r], 
             [k*412 + 1.5*c, k*419 + 3*r]])
         pts2 = np.float32([             # destination points

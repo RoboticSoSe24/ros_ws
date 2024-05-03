@@ -38,13 +38,6 @@ class DefaultDriving(Node):
         # create publisher for driving commands
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
         
-        timer_period = 0.2  # secondsspeed_adjusment_callback
-        #self.my_timer = self.create_timer(timer_period, self.timer_callback)
-
-        # create publisher for current action state
-        self.state_publisher = self.create_publisher(String, 'state', 1)
-        self.driving = True
-
         # create service to update lane following
         self.lane_service = self.create_service(FollowLane, 'follow_lanes', 
                                                 self.follow_lanes_callback)
@@ -58,7 +51,6 @@ class DefaultDriving(Node):
             x2 = msg.right[1].x
             x3 = msg.right[2].x
             self.m = (x1 + x2 + x3) / 3
-            self.get_logger().info('x={}'.format(self.m))
         else:
             self.m = None
 
@@ -83,18 +75,6 @@ class DefaultDriving(Node):
 
         speed_drive = (1 / (self.x_sum + 100)) * 150 * speed_drive
 
-        if not self.driving and speed_drive > 0.0:
-            self.driving = True
-            msg = String()
-            msg.data = 'driving'
-            self.state_publisher.publish(msg)
-
-        if self.driving and speed_drive == 0.0:
-            self.driving = False
-            msg = String()
-            msg.data = 'stopping'
-            self.state_publisher.publish(msg)
-
         if self.m is not None:
             if self.m < boundary_left:
                 self.get_logger().info('turn left (m = {})'.format(self.m))
@@ -109,10 +89,12 @@ class DefaultDriving(Node):
             msg.linear.x = speed_drive
             msg.angular.z = turn
             self.velocity_publisher.publish(msg)
+
         else:
             self.get_logger().info('Did not receive valid lane messages')
 
         return response
+
 
 
 def main(args=None):

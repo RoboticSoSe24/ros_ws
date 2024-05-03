@@ -1,11 +1,14 @@
 import rclpy
 from rclpy.node import Node
 
+from interfaces.srv import OvertakeObstruction
 from interfaces.msg import Lanes
 
 from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
+
+import time
 
 
 class obstruction(Node):
@@ -30,31 +33,30 @@ class obstruction(Node):
         self.laser_subscription
 
         # create subscriber for road lanes
-        self.lane_subscription = self.create_subscription(
-            Lanes,
-            'lanes',
-            self.lanes_callback,
-            10)
-        self.m = None
+        #self.lane_subscription = self.create_subscription(
+        #    Lanes,
+        #    'lanes',
+        #    self.lanes_callback,
+        #    10)
+        #self.m = None
         
         # create publisher for driving commands
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
         timer_period = 0.1  # seconds
-        self.my_timer = self.create_timer(timer_period, self.follow_and_switch)
+        #self.my_timer = self.create_timer(timer_period, self.follow_and_switch)
 
-        # create publisher for current action state
-        self.state_publisher = self.create_publisher(String, 'state', 1)
-        self.driving = True
+        # create service for overtaking obstruction
+        self.obstruction_service = self.create_service(OvertakeObstruction, 
+                                                       'overtake_obstruction',
+                                                       self.follow_and_switch) 
 
         self.get_logger().info('initialized obstruction')
-
 
 
     def scanner_callback(self, msg):
         laser_data = msg.ranges #array of all laser data
 
         #ckeck here if object is still on the right lane
-
 
 
     def lanes_callback(self, msg):
@@ -82,18 +84,24 @@ class obstruction(Node):
         self.get_logger().info('initialized lanes_callback')
 
 
+    def follow_and_switch(self, request, response):
+        self.get_logger().info('obstruction overtake called')
 
-    def follow_and_switch(self):
-        speed = 0.0
-        turn = 0.0
+        distance = request.distance
+        
+        msg = Twist()
+        msg.linear.x = 0.0
+        msg.angular.z = 0.0
+        self.velocity_publisher.publish(msg)
 
         #driving logic here to switch lanes 
         #and stay on lane once switched (see follow_lanes_callback in DeflaultDriving)
         
-        msg = Twist()
-        msg.linear.x = speed
-        msg.angular.z = turn
-        self.velocity_publisher.publish(msg)
+        time.sleep(5)
+        self.get_logger().info('obstruction overtake done')
+
+        return response
+
 
 
 def main(args=None):

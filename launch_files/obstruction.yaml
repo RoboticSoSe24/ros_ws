@@ -14,3 +14,9 @@ launch:
     pkg: "planning"
     exec: "obstruction"
     name: "obstruction"
+
+- node:
+    pkg: "planning"
+    exec: "defaultDriving"
+    name: "defaultdriving"
+    

@@ -2,11 +2,14 @@ import rclpy
 from rclpy.node import Node
 
 from interfaces.srv import FollowLane
+from interfaces.srv import OvertakeObstruction
 
 from geometry_msgs.msg import Twist
 
 from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
+
+import time
 
 
 class StateController(Node):
@@ -20,7 +23,7 @@ class StateController(Node):
 
         # variable for the last sensor reading
         self.min_index = 0
-        self.min_value = 0.0
+        self.min_value = float('inf')
         self.last_value = 0.0
         
         # definition of the QoS in order to receive data despite WiFi
@@ -39,15 +42,20 @@ class StateController(Node):
         # create publisher for velocity
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
 
-        timer_period = 0.1  # secondsspeed_adjusment_callback
+        timer_period = 0.1  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
         # create publisher for current action state
         self.state_publisher = self.create_publisher(String, 'state', 1)
-        self.driving = True
 
         # create client to call default driving
         self.driving_client = self.create_client(FollowLane, 'follow_lanes')
+
+        # create client to call obstruction overtake
+        self.obstruction_client = self.create_client(OvertakeObstruction, 'overtake_obstruction')
+
+        # future object to wait state completion
+        self.future = None
 
         self.get_logger().info('initialized StateController')
 
@@ -69,28 +77,29 @@ class StateController(Node):
 
     # check necessity for state updates
     def timer_callback(self):
-        distance_stop = self.get_parameter('distance_to_stop').get_parameter_value().double_value
+        # block updates while waiting for a service to complete
+        if self.future and not self.future.done():  
+            return
 
-        driving = False
-        if self.min_value < distance_stop:
-            msg = Twist()
-            msg.linear.x = 0.0
-            msg.angular.z = 0.0
-            self.velocity_publisher.publish(msg)
-        else:
+        distance_stop = self.get_parameter('distance_to_stop').get_parameter_value().double_value
+        state_msg = String()
+
+        # check whether to enter a different behavioral state
+
+        if self.min_value < distance_stop:              # overtake obstruction
+            self.get_logger().info('calling overtake ' + str(self.min_value))
+            req = OvertakeObstruction.Request()
+            req.distance = distance_stop
+            self.future = self.obstruction_client.call_async(req)
+            state_msg.data = 'overtake obstruction'
+
+        else:                                           # default driving
             req = FollowLane.Request()
             req.right_lane = True
-            future = self.driving_client.call_async(req)
-            future.done()
-            driving = True
+            self.driving_client.call_async(req)
+            state_msg.data = 'default driving'
 
-        if driving != self.driving:
-            msg = String()
-            if driving: msg.data = 'driving'
-            else:       msg.data = 'stopping'
-            self.state_publisher.publish(msg)
-
-        self.driving = driving
+        self.state_publisher.publish(state_msg)
 
 
 
