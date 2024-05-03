@@ -48,7 +48,7 @@ class obstruction(Node):
 
 
 
-    def scanner_callback(self, msg, request, response):
+    def scanner_callback(self, msg):
         obstical_angle = self.get_parameter('obstical_angle').get_parameter_value().double_value
         object_distance = self.get_parameter('object_distance').get_parameter_value().double_value
         buffer = self.get_parameter('buffer').get_parameter_value().double_value
@@ -66,7 +66,7 @@ class obstruction(Node):
             self.right_object = False
 
         
-    def follow_and_switch(self):
+    def follow_and_switch(self, request, response):
 
         msg = Twist()
         if self.did_turn == False:
