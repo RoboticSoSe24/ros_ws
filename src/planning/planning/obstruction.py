@@ -45,8 +45,10 @@ class obstruction(Node):
         # create client to call default driving
         self.driving_client = self.create_client(FollowLane, 'follow_lanes')
 
-        self.get_logger().info('initialized obstruction')
+        # future object to wait for state completion
+        self.future = None
 
+        self.get_logger().info('initialized obstruction')
 
 
     def scanner_callback(self, msg):
@@ -66,42 +68,46 @@ class obstruction(Node):
         else:
             self.right_object = False
 
-        self.get_logger().info('laserscan: ' + str(self.right_object))
-
         
     def follow_and_switch(self):
+        # block updates while waiting for a service to complete
+        if not(self.future is None) and (not self.future.done()):  
+            self.get_logger().info('waiting')
+            return
 
         msg = Twist()
         if self.did_turn == False:
             self.get_logger().info('Left Turn')
-            #drehe um 90 Grad nach links
+
+            # rotate 90° left
             speed = 0.0
             msg.linear.x = speed
             msg.angular.z = 0.75 #0.82
             self.velocity_publisher.publish(msg)
             time.sleep(2)
 
-            #fahre danach für 20 cm nach vorn
+            # drive straight for 2 seconds
             speed = 0.15
             msg.linear.x = speed
             msg.angular.z = 0.0
             self.velocity_publisher.publish(msg)
             time.sleep(2)
 
-            #drehe um 90 Grad nach rechts
+            # rotate 90° right
             speed = 0.0
             msg.linear.x = speed
             msg.angular.z = -0.75 #-0.82
             self.velocity_publisher.publish(msg)
             time.sleep(2)
 
-            #fahre neben die Box
+            # drive closer to obstruction, to adjust for diagonal distance
             speed = 0.15
             msg.linear.x = speed
             msg.angular.z = 0.0
             self.velocity_publisher.publish(msg)
             time.sleep(0.2)
 
+            # stop
             speed = 0.0
             msg.linear.x = speed
             msg.angular.z = 0.0
@@ -115,46 +121,43 @@ class obstruction(Node):
             self.wait_counter += 1
             return
 
+        self.get_logger().info('Enter default Driving')
         if self.right_object == True:
-            self.get_logger().info('Enter default Driving')
             req = FollowLane.Request()
             req.right_lane = True
-            future = self.driving_client.call_async(req)
-            future.done() 
+            self.future = self.driving_client.call_async(req) 
 
         else: 
-            #msg = Twist()
-            speed = 0.0
-            msg.angular.z = 0.0
-            self.velocity_publisher.publish(msg)
-
             self.get_logger().info('Right Turn')
 
-            #drehe um 90 Grad nach rechts
+            # rotate 90° right
             speed = 0.0
             msg.linear.x = speed
             msg.angular.z = -0.82
             self.velocity_publisher.publish(msg)
             time.sleep(2)
 
-            #fahre danach für 20 cm nach vorn
+            # drive straight for 2 seconds
             speed = 0.15
             msg.linear.x = speed
             msg.angular.z = 0.0
             self.velocity_publisher.publish(msg)
             time.sleep(2)
 
-            #drehe um 90 Grad nach links
+            # rotate 90° left
             speed = 0.0
             msg.linear.x = speed
             msg.angular.z = 0.82
             self.velocity_publisher.publish(msg)
             time.sleep(2)
 
+            # stop
             speed = 0.0
+            msg.linear.x = speed
             msg.angular.z = 0.0
             self.velocity_publisher.publish(msg)
         
+            # kill node 
             exit()
 
 

@@ -17,7 +17,7 @@ class DefaultDriving(Node):
         # definition of the parameters that can be changed at runtime
         self.declare_parameter('boundary_left', -12)
         self.declare_parameter('boundary_right', 12)
-        self.declare_parameter('speed_drive', 0.15)
+        self.declare_parameter('speed_drive', 0.07)
         self.declare_parameter('speed_turn', 0.0055)
         
         # definition of the QoS in order to receive data despite WiFi

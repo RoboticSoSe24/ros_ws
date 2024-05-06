@@ -19,7 +19,7 @@ class StateController(Node):
         super().__init__('state_controller')
 
         # definition of the parameters that can be changed at runtime
-        self.declare_parameter('distance_to_stop', 0.3)
+        self.declare_parameter('distance_to_stop', 0.35)
         self.declare_parameter('scan_angle', 80)
 
         # variable for the last sensor reading
@@ -43,7 +43,7 @@ class StateController(Node):
         # create publisher for velocity
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
 
-        timer_period = 0.1  # seconds
+        timer_period = 0.01  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
         # create publisher for current action state
@@ -55,7 +55,7 @@ class StateController(Node):
         # create client to call obstruction overtake
         self.obstruction_client = self.create_client(OvertakeObstruction, 'overtake_obstruction')
 
-        # future object to wait state completion
+        # future object to wait for state completion
         self.future = None
 
         self.get_logger().info('initialized StateController')
@@ -75,13 +75,11 @@ class StateController(Node):
                 self.min_value = d
                 self.min_index = i
 
-        self.get_logger().info(str(laser_data))
-
 
     # check necessity for state updates
     def timer_callback(self):
         # block updates while waiting for a service to complete
-        if self.future and not self.future.done():  
+        if not(self.future is None) and (not self.future.done()):  
             return
 
         distance_stop = self.get_parameter('distance_to_stop').get_parameter_value().double_value
@@ -90,20 +88,20 @@ class StateController(Node):
         # check whether to enter a different behavioral state
 
         if self.min_value < distance_stop:              # overtake obstruction
-            self.get_logger().info('calling overtake')
+            self.get_logger().info('calling obstruction')
             req = OvertakeObstruction.Request()
             req.distance = distance_stop
             #self.future = self.obstruction_client.call_async(req)
             system('ros2 run planning obstruction')
             self.get_logger().info('called obstruction')
             self.min_value = float('inf')
-            
             state_msg.data = 'overtake obstruction'
 
         else:                                           # default driving
             req = FollowLane.Request()
             req.right_lane = True
-            self.driving_client.call_async(req)
+            self.future = self.driving_client.call_async(req)
+            #self.driving_client.call_async(req)
             state_msg.data = 'default driving'
 
         self.state_publisher.publish(state_msg)
