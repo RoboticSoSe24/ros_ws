@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'laneObserver = perception.laneObserver:main'
+            'laneObserver = perception.laneObserver:main',
+            'signObserver = perception.signObserver:main'
         ],
     },
 )
