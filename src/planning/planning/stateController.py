@@ -8,6 +8,7 @@ from interfaces.srv import OvertakeObstruction
 
 from geometry_msgs.msg import Twist
 
+from std_msgs.msg import Bool
 from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 
@@ -40,8 +41,13 @@ class StateController(Node):
             qos_profile=qos_policy,
             callback_group=self.cb_group)
 
-        # variable for the last sensor reading
-        self.min_distance = float('inf')
+        self.min_distance = float('inf')        # variable for the last laserscan reading
+
+        # create subscriber for traffic lights
+        self.traffic_light_pub = self.create_subscription(
+            Bool, 'traffic_light', self.traffic_light_callback, 1, callback_group=self.cb_group)
+
+        self.traffic_light_clear = False        # variable for the last traffic light message
 
         # create publisher for velocity
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
@@ -79,12 +85,20 @@ class StateController(Node):
                 self.min_distance = d
 
 
+    def traffic_light_callback(self, msg):
+        self.traffic_light_clear = msg.data
+
+
     # check necessity for state updates
     def timer_callback(self):
         distance_stop = self.get_parameter('distance_to_stop').get_parameter_value().double_value
 
+        # if there is a red light prevent all other actions
+        if not self.traffic_light_clear:
+            self.__stop()
+
         # overtake obstruction
-        if self.min_distance < distance_stop and self.obstruction_client.service_is_ready():   
+        elif self.min_distance < distance_stop and self.obstruction_client.service_is_ready():   
             self.__pub_state('overtaking obstruction')
             req = OvertakeObstruction.Request()
             req.distance = distance_stop * math.sqrt(2) + 0.08   # safety margin so overtake won't immediately return

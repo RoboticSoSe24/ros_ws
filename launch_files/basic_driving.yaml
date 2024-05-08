@@ -6,6 +6,11 @@ launch:
     name: "laneobserver"
 
 - node:
+    pkg: "perception"
+    exec: "signObserver"
+    name: "signObserver"
+
+- node:
     pkg: "planning"
     exec: "stateController"
     name: "stateController"

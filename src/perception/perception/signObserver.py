@@ -1,11 +1,12 @@
 import rclpy
 from rclpy.node import Node
-
 from sensor_msgs.msg import CompressedImage
-from cv_bridge import CvBridge
-import cv2
-
 from std_msgs.msg import Bool
+
+import cv2
+from cv_bridge import CvBridge
+
+import numpy as np
 
 
 class CameraViewer(Node):
@@ -26,9 +27,10 @@ class CameraViewer(Node):
         self.subscription
 
         # Create a publisher for the traffic_light topic
-        self.traffic_light_pub = self.create_publisher(Bool, 'traffic_light', qos_profile=qos_policy)
+        self.traffic_light_pub = self.create_publisher(Bool, 'traffic_light', 1)
 
         self.drive = False
+
 
     def scanner_callback(self, data):
 
@@ -41,41 +43,29 @@ class CameraViewer(Node):
         segment_width = width // 3
 
         cropped_img = img_cv[2 * segment_height : 3 * segment_height, 2  * segment_width:]
-
         height, width, _ = cropped_img.shape
+    
+        B, G, R = cv2.split(cropped_img)
 
+        total_rgb_img = np.zeros((height, width), dtype='uint16')
+        total_rgb_img += B
+        total_rgb_img += G
+        total_rgb_img += R
 
-        cv2.imshow("Original Image", img_cv)
+        # Set pixels with total RGB value more than 600 to black
+        thresh_upper = np.uint8(cv2.threshold(total_rgb_img, 600.0, 65535.0, cv2.THRESH_BINARY_INV)[1])
+        # Set pixels with total RGB value less than 150 to black
+        thresh_lower = np.uint8(cv2.threshold(total_rgb_img, 150.0, 65535.0, cv2.THRESH_BINARY)[1])
+        # Set pixels to black if red to green difference is less than 80
+        thresh_diff = np.uint8(cv2.threshold(np.abs(np.int16(G) - np.int16(R)), 80.0, 65535.0, cv2.THRESH_BINARY)[1])
 
-        # Set pixels with total RGB value less than 150 and more than 600 to black
-        # Set pixels to black if differenz is less than 80
-        #Bildbearbeitung
-        for y in range(height):
-            for x in range(width):
-                pixel = cropped_img[y, x]
-                total_rgb = sum(pixel)
-                if total_rgb > 600 or abs(int(pixel[1]) - int(pixel[2])) < 80 or total_rgb < 150:
-                    cropped_img[y, x] = [0, 0, 0]  # Set pixel to black
-
-
-        total_red = 0
-        total_green = 0
-        total_blue = 0
-
-        for y in range(height):
-            for x in range(width):
-                pixel = cropped_img[y, x]
-                total_blue += pixel[0]
-                total_green += pixel[1]
-                total_red += pixel[2]
-
-
-        #Gesamtsumme der RGB-Werte:
-        #print("Gesamtsumme der RGB-Werte:")
-        #print("Rot:", total_red)
-        #print("Grün:", total_green)
-        #print("Blau:", total_blue)
-
+        # mask out areas from the original image where thresholds didn't pass
+        mask = thresh_upper & thresh_lower & thresh_diff
+        cropped_img &= cv2.merge((mask, mask, mask))
+        
+        # compare number of red to green pixels
+        total_red = cv2.sumElems(cropped_img[:,:,2])
+        total_green = cv2.sumElems(cropped_img[:,:,1])
 
         if total_red > total_green:
             self.drive = False
@@ -84,15 +74,11 @@ class CameraViewer(Node):
             self.drive = True
             #self.get_logger().info('fahren r = {}'.format(total_red))
 
-
-        # Publish the traffic_light topic
+        # Publish to the traffic_light topic
         msg = Bool()
         msg.data = self.drive
         self.traffic_light_pub.publish(msg)
 
-        # original image and modified image using OpenCV
-
-        cv2.imshow("Modified Image", cropped_img)
         cv2.waitKey(1)
 
 
