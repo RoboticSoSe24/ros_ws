@@ -1,5 +1,9 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import ReentrantCallbackGroup
+
+from interfaces.srv import OvertakeObstruction
 from interfaces.srv import FollowLane
 
 from std_msgs.msg import String
@@ -8,10 +12,14 @@ from geometry_msgs.msg import Twist
 
 import time
 
-class obstruction(Node):
+class Obstruction(Node):
     def __init__(self):
         super().__init__('obstruction')
 
+        # callback group to allow synchronous service calls
+        self.cb_group = ReentrantCallbackGroup()
+
+        # declaration of parameters that can be changed at runtime
         self.declare_parameter('scan_angle', 100.0)
         self.declare_parameter('buffer', 1.0)
         self.declare_parameter('object_distance', 0.5)
@@ -33,28 +41,31 @@ class obstruction(Node):
             LaserScan,
             'scan',
             self.scanner_callback,
-            qos_profile=qos_policy)
-        self.laser_subscription
+            qos_profile=qos_policy,
+            callback_group=self.cb_group)
         
         # create publisher for driving commands
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
 
-        timer_period = 0.1  # seconds
-        self.my_timer = self.create_timer(timer_period, self.follow_and_switch)
-
         # create client to call default driving
-        self.driving_client = self.create_client(FollowLane, 'follow_lanes')
+        self.driving_client = self.create_client(
+            FollowLane, 
+            'follow_lanes',
+            callback_group=self.cb_group)
 
-        # future object to wait for state completion
-        self.future = None
+        # create service for obstruction overtake
+        self.service = self.create_service(
+            OvertakeObstruction,
+            'overtake_obstruction',
+            self.obstruction_callback)
 
-        self.get_logger().info('initialized obstruction')
+        self.get_logger().info('initialized Obstruction')
 
 
     def scanner_callback(self, msg):
-        scan_angle = self.get_parameter('scan_angle').get_parameter_value().double_value
+        scan_angle      = self.get_parameter('scan_angle').get_parameter_value().double_value
         object_distance = self.get_parameter('object_distance').get_parameter_value().double_value
-        buffer = self.get_parameter('buffer').get_parameter_value().double_value
+        buffer          = self.get_parameter('buffer').get_parameter_value().double_value
 
         sum_for_True = 0
         laser_data = msg.ranges  # array of all laser data
@@ -68,109 +79,72 @@ class obstruction(Node):
         else:
             self.right_object = False
 
-        
-    def follow_and_switch(self):
-        # block updates while waiting for a service to complete
-        if not(self.future is None) and (not self.future.done()):  
-            self.get_logger().info('waiting')
-            return
 
-        msg = Twist()
-        if self.did_turn == False:
-            self.get_logger().info('Left Turn')
+    def obstruction_callback(self, request, response):        
+        self.get_logger().info('switch left')
+        self.__rotate_90_deg(True)
+        self.__drive_straight(2)
+        self.__rotate_90_deg()
+        self.__stop()
 
-            # rotate 90° left
-            speed = 0.0
-            msg.linear.x = speed
-            msg.angular.z = 0.75 #0.82
-            self.velocity_publisher.publish(msg)
-            time.sleep(2)
-
-            # drive straight for 2 seconds
-            speed = 0.15
-            msg.linear.x = speed
-            msg.angular.z = 0.0
-            self.velocity_publisher.publish(msg)
-            time.sleep(2)
-
-            # rotate 90° right
-            speed = 0.0
-            msg.linear.x = speed
-            msg.angular.z = -0.75 #-0.82
-            self.velocity_publisher.publish(msg)
-            time.sleep(2)
-
-            # drive closer to obstruction, to adjust for diagonal distance
-            speed = 0.15
-            msg.linear.x = speed
-            msg.angular.z = 0.0
-            self.velocity_publisher.publish(msg)
-            time.sleep(0.2)
-
-            # stop
-            speed = 0.0
-            msg.linear.x = speed
-            msg.angular.z = 0.0
-            self.velocity_publisher.publish(msg)
-
-            self.did_turn = True
-            return 
-
-        if self.wait_counter < 10:
-            self.get_logger().info('waiting: ' + str(self.wait_counter))
-            self.wait_counter += 1
-            return
-
-        self.get_logger().info('Enter default Driving')
-        if self.right_object == True:
+        self.get_logger().info('pass obstruction')
+        while self.right_object:
             req = FollowLane.Request()
-            req.right_lane = True
-            self.future = self.driving_client.call_async(req) 
+            req.right_lane = False
+            self.__sync_call(self.driving_client, req)
 
-        else: 
-            self.get_logger().info('Right Turn')
+        self.get_logger().info('switch right')
+        self.__rotate_90_deg()
+        self.__drive_straight(2)
+        self.__rotate_90_deg(True)
+        self.__stop()
 
-            # rotate 90° right
-            speed = 0.0
-            msg.linear.x = speed
-            msg.angular.z = -0.82
-            self.velocity_publisher.publish(msg)
-            time.sleep(2)
+        return response
 
-            # drive straight for 2 seconds
-            speed = 0.15
-            msg.linear.x = speed
-            msg.angular.z = 0.0
-            self.velocity_publisher.publish(msg)
-            time.sleep(2)
 
-            # rotate 90° left
-            speed = 0.0
-            msg.linear.x = speed
-            msg.angular.z = 0.82
-            self.velocity_publisher.publish(msg)
-            time.sleep(2)
+    def __sync_call(self, client, request):
+        future = client.call_async(request)
+        while not future.done():
+            time.sleep(0.01)
+        return future.result()
+    
 
-            # stop
-            speed = 0.0
-            msg.linear.x = speed
-            msg.angular.z = 0.0
-            self.velocity_publisher.publish(msg)
-        
-            # kill node 
-            exit()
+    def __rotate_90_deg(self, ccw=False):
+        msg = Twist()
+        msg.linear.x = 0.0
+        msg.angular.z = 0.82 if ccw else -0.82
+        self.velocity_publisher.publish(msg)
+        time.sleep(2)
+
+
+    def __drive_straight(self, seconds):
+        msg = Twist()
+        msg.linear.x = 0.13
+        msg.angular.z = 0.0
+        self.velocity_publisher.publish(msg)
+        time.sleep(seconds)
+
+
+    def __stop(self):
+        msg = Twist()
+        msg.linear.x = 0.0
+        msg.angular.z = 0.0
+        self.velocity_publisher.publish(msg)
 
 
 
 def main(args=None):
-    print("obstruction test")
     rclpy.init(args=args)
 
-    obstruction_Node = obstruction()
+    obstruction = Obstruction()
 
-    rclpy.spin(obstruction_Node)
+    executor = MultiThreadedExecutor()
+    executor.add_node(obstruction)
 
-    obstruction_Node.destroy_node()
+    executor.spin()
+
+    executor.shutdown()
+    obstruction.destroy_node()
     rclpy.shutdown()
 
 

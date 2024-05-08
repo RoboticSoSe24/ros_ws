@@ -1,5 +1,7 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.callback_groups import ReentrantCallbackGroup
 
 from interfaces.srv import FollowLane
 from interfaces.srv import OvertakeObstruction
@@ -18,9 +20,12 @@ class StateController(Node):
     def __init__(self):
         super().__init__('state_controller')
 
-        # definition of the parameters that can be changed at runtime
-        self.declare_parameter('distance_to_stop', 0.35)
-        self.declare_parameter('scan_angle', 80)
+        # callback group to allow synchronous service calls
+        self.cb_group = ReentrantCallbackGroup()
+
+        # declaration of parameters that can be changed at runtime
+        self.declare_parameter('distance_to_stop', 0.3)
+        self.declare_parameter('scan_angle', 50)
 
         # variable for the last sensor reading
         self.min_index = 0
@@ -37,8 +42,8 @@ class StateController(Node):
             LaserScan,
             'scan',
             self.scanner_callback,
-            qos_profile=qos_policy)
-        self.laser_subscription
+            qos_profile=qos_policy,
+            callback_group=self.cb_group)
 
         # create publisher for velocity
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
@@ -50,13 +55,16 @@ class StateController(Node):
         self.state_publisher = self.create_publisher(String, 'state', 1)
 
         # create client to call default driving
-        self.driving_client = self.create_client(FollowLane, 'follow_lanes')
+        self.driving_client = self.create_client(
+            FollowLane, 
+            'follow_lanes',
+            callback_group=self.cb_group)
 
         # create client to call obstruction overtake
-        self.obstruction_client = self.create_client(OvertakeObstruction, 'overtake_obstruction')
-
-        # future object to wait for state completion
-        self.future = None
+        self.obstruction_client = self.create_client(
+            OvertakeObstruction, 
+            'overtake_obstruction',
+            callback_group=self.cb_group)
 
         self.get_logger().info('initialized StateController')
 
@@ -78,33 +86,44 @@ class StateController(Node):
 
     # check necessity for state updates
     def timer_callback(self):
-        # block updates while waiting for a service to complete
-        if not(self.future is None) and (not self.future.done()):  
-            return
-
         distance_stop = self.get_parameter('distance_to_stop').get_parameter_value().double_value
-        state_msg = String()
 
         # check whether to enter a different behavioral state
-
-        if self.min_value < distance_stop:              # overtake obstruction
-            self.get_logger().info('calling obstruction')
+        if self.min_value < distance_stop and self.obstruction_client.service_is_ready():   # overtake obstruction
+            self.__pub_state('overtaking obstruction')
             req = OvertakeObstruction.Request()
-            req.distance = distance_stop
-            #self.future = self.obstruction_client.call_async(req)
-            system('ros2 run planning obstruction')
-            self.get_logger().info('called obstruction')
-            self.min_value = float('inf')
-            state_msg.data = 'overtake obstruction'
-
-        else:                                           # default driving
+            self.__sync_call(self.obstruction_client, req)
+            self.__pub_state('default driving')
+        
+        elif self.driving_client.service_is_ready():                                        # default driving
             req = FollowLane.Request()
             req.right_lane = True
-            self.future = self.driving_client.call_async(req)
-            #self.driving_client.call_async(req)
-            state_msg.data = 'default driving'
+            self.__sync_call(self.driving_client, req)
+        
+        else:                                                                               # no services ready -> stop
+            self.__stop()
 
-        self.state_publisher.publish(state_msg)
+    
+    def __pub_state(self, text, log=True):
+        msg = String()
+        msg.data = text
+        self.state_publisher.publish(msg)
+        if log:
+            self.get_logger().info(text)
+
+
+    def __sync_call(self, client, request):
+        future = client.call_async(request)
+        while not future.done():
+            time.sleep(0.01)
+        return future.result()
+    
+
+    def __stop(self):
+        msg = Twist()
+        msg.linear.x = 0.0
+        msg.angular.z = 0.0
+        self.velocity_publisher.publish(msg)
 
 
 
@@ -112,9 +131,13 @@ def main(args=None):
     rclpy.init(args=args)
 
     state_controller = StateController()
-    
-    rclpy.spin(state_controller)
 
+    executor = MultiThreadedExecutor()
+    executor.add_node(state_controller)
+    
+    executor.spin()
+    
+    executor.shutdown()
     state_controller.destroy_node()
     rclpy.shutdown()
 
