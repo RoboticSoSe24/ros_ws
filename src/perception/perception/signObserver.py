@@ -1,4 +1,3 @@
-import os
 import rclpy
 from rclpy.node import Node
 
@@ -13,9 +12,6 @@ class CameraViewer(Node):
     def __init__(self):
         super().__init__('camera_viewer')
 
-        self.declare_parameter('max_red_value', 630000)
-        self.declare_parameter('max_bright', 500)
-
         self.bridge = CvBridge()
 
         qos_policy = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
@@ -29,20 +25,12 @@ class CameraViewer(Node):
             qos_profile=qos_policy)
         self.subscription
 
-        # Create a directory to save images if it does not exist
-        self.save_dir = "imgFiles"
-        if not os.path.exists(self.save_dir):
-            os.makedirs(self.save_dir)
-
         # Create a publisher for the traffic_light topic
         self.traffic_light_pub = self.create_publisher(Bool, 'traffic_light', qos_profile=qos_policy)
 
         self.drive = False
 
     def scanner_callback(self, data):
-        max_red_value   = self.get_parameter('max_red_value').get_parameter_value().integer_value
-        max_bright   = self.get_parameter('max_bright').get_parameter_value().integer_value
-
 
         # convert message to opencv image
         img_cv = self.bridge.compressed_imgmsg_to_cv2(data, desired_encoding='passthrough')
@@ -54,16 +42,21 @@ class CameraViewer(Node):
 
         cropped_img = img_cv[2 * segment_height : 3 * segment_height, 2  * segment_width:]
 
-        # Set pixels with total RGB value less than 500 to black
         height, width, _ = cropped_img.shape
 
+
+        cv2.imshow("Original Image", img_cv)
+
+        # Set pixels with total RGB value less than 150 and more than 600 to black
+        # Set pixels to black if differenz is less than 80
         #Bildbearbeitung
-        #for y in range(height):
-        #    for x in range(width):
-        #        pixel = cropped_img[y, x]
-        #        total_rgb = sum(pixel)
-        #        if total_rgb < max_bright:
-        #            cropped_img[y, x] = [0, 0, 0]  # Set pixel to black
+        for y in range(height):
+            for x in range(width):
+                pixel = cropped_img[y, x]
+                total_rgb = sum(pixel)
+                if total_rgb > 600 or abs(int(pixel[1]) - int(pixel[2])) < 80 or total_rgb < 150:
+                    cropped_img[y, x] = [0, 0, 0]  # Set pixel to black
+
 
         total_red = 0
         total_green = 0
@@ -76,26 +69,29 @@ class CameraViewer(Node):
                 total_green += pixel[1]
                 total_red += pixel[2]
 
+
         #Gesamtsumme der RGB-Werte:
         #print("Gesamtsumme der RGB-Werte:")
         #print("Rot:", total_red)
         #print("Grün:", total_green)
         #print("Blau:", total_blue)
 
-        if total_red > max_red_value:
+
+        if total_red > total_green:
             self.drive = False
-            self.get_logger().info('stoppen r = {}'.format(total_red))
+            #self.get_logger().info('stoppen r = {}'.format(total_red))
         else:
             self.drive = True
-            self.get_logger().info('fahren r = {}'.format(total_red))
+            #self.get_logger().info('fahren r = {}'.format(total_red))
 
-        # Publish the value of self.drive to the traffic_light topic
+
+        # Publish the traffic_light topic
         msg = Bool()
         msg.data = self.drive
         self.traffic_light_pub.publish(msg)
 
-        # Display the original image and the modified image using OpenCV
-        cv2.imshow("Original Image", img_cv)
+        # original image and modified image using OpenCV
+
         cv2.imshow("Modified Image", cropped_img)
         cv2.waitKey(1)
 
