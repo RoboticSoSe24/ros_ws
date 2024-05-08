@@ -12,7 +12,7 @@ from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 
 import time
-from os import system
+import math
 
 
 class StateController(Node):
@@ -26,11 +26,6 @@ class StateController(Node):
         # declaration of parameters that can be changed at runtime
         self.declare_parameter('distance_to_stop', 0.3)
         self.declare_parameter('scan_angle', 50)
-
-        # variable for the last sensor reading
-        self.min_index = 0
-        self.min_value = float('inf')
-        self.last_value = 0.0
         
         # definition of the QoS in order to receive data despite WiFi
         qos_policy = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
@@ -44,6 +39,9 @@ class StateController(Node):
             self.scanner_callback,
             qos_profile=qos_policy,
             callback_group=self.cb_group)
+
+        # variable for the last sensor reading
+        self.min_distance = float('inf')
 
         # create publisher for velocity
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
@@ -72,35 +70,35 @@ class StateController(Node):
     def scanner_callback(self, msg):
         scan_angle = self.get_parameter('scan_angle').get_parameter_value().integer_value
         
-        laser_data = msg.ranges
-
-        self.min_value = float('inf')
-        self.min_index = 0
-
+        self.min_distance = float('inf')
+        
+        # find the closest object in a scan angle in front of the bot
         for i in range(-int(scan_angle/2), int(scan_angle/2)):
-            d = laser_data[i]
-            if d != 0.0 and d < self.min_value:
-                self.min_value = d
-                self.min_index = i
+            d = msg.ranges[i]
+            if d != 0.0 and d < self.min_distance:
+                self.min_distance = d
 
 
     # check necessity for state updates
     def timer_callback(self):
         distance_stop = self.get_parameter('distance_to_stop').get_parameter_value().double_value
 
-        # check whether to enter a different behavioral state
-        if self.min_value < distance_stop and self.obstruction_client.service_is_ready():   # overtake obstruction
+        # overtake obstruction
+        if self.min_distance < distance_stop and self.obstruction_client.service_is_ready():   
             self.__pub_state('overtaking obstruction')
             req = OvertakeObstruction.Request()
+            req.distance = distance_stop * math.sqrt(2) + 0.08   # safety margin so overtake won't immediately return
             self.__sync_call(self.obstruction_client, req)
             self.__pub_state('default driving')
         
-        elif self.driving_client.service_is_ready():                                        # default driving
+        # default driving
+        elif self.driving_client.service_is_ready():                                        
             req = FollowLane.Request()
             req.right_lane = True
             self.__sync_call(self.driving_client, req)
         
-        else:                                                                               # no services ready -> stop
+        # no services ready -> stop
+        else:                                                                               
             self.__stop()
 
     
