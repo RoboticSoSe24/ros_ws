@@ -91,13 +91,21 @@ class StateController(Node):
             self.__sync_call(self.obstruction_client, req)
             self.__pub_state('default driving')
         
+        # stop in front of obstruction
+        elif self.min_distance < distance_stop and not self.obstruction_client.service_is_ready():
+            self.__pub_state('stopping in front of obstruction')
+            self.__stop()
+            while self.min_distance < distance_stop and not self.obstruction_client.service_is_ready():
+                time.sleep(0.01)
+            self.__pub_state('default driving')
+
         # default driving
         elif self.driving_client.service_is_ready():                                        
             req = FollowLane.Request()
             req.right_lane = True
             self.__sync_call(self.driving_client, req)
         
-        # no services ready -> stop
+        # for lack of better ideas: stop
         else:                                                                               
             self.__stop()
 
