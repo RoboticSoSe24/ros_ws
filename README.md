@@ -51,9 +51,9 @@ then launch according to the task via:
 
 - **laneObserver**
   - *canny_threshold*   - threshold for edge detection, increase if contrast is low
-  - *line_width*          - line width of relevant road markings
-  - *line_tolerance*      - tolerance on width filtering, decrease for stricter filtering
-  - *lane_width*          - width of the road lanes
+  - *line_width*          - line width of relevant road markings, decrease if you see black pixels within road markings in the image "line width filter", increase if road markings are blue but not cyan in the image "line width filter"
+  - *line_tolerance*      - tolerance on width filtering, decrease for stricter filtering, increase if only a part of the road markings shows up cyan in the image "line width filter" 
+  - *lane_width*          - width of the road lanes, increase if the green and blue areas in the image "countour 1, contour 2, centerline" are not overlapping
   - *dot_line_length*     - segment length of dotted line
   - *dot_line_tolerance*  - tolerance on dotted line segment length filtreing, decrease for stricter filtering
 
@@ -71,6 +71,5 @@ then launch according to the task via:
 
 
 - **obstruction**
-  - *scan_angle*          - angle to the right of the robot in which to search for obstructions
-  - *buffer*              - minimum number of values to recognize an object
-  - *object_distance*     - laserscan distance below which an obstruction is considered adjacent
+  - *scan_angle*          - opening angle within which laserscan ranges will be observed during obstruction overtake
+  - *scan_direction*      - directional offset to the scan angle range (counter-clockwise)
