@@ -80,6 +80,9 @@ class LaneObserver(Node):
         # warp perspective
         warp = self.__perspective_transform(img_cv, imSize)
 
+        # find line intersections hinting at parking spots
+        self.__find_intersections(warp)
+
         # filter for line segments with the correct width
         filter = self.__filter_line_width(warp)
 
@@ -89,12 +92,12 @@ class LaneObserver(Node):
         if found_dotted:
             dotted = cv2.dilate(dotted, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.lane_width, self.lane_width)))
             lanesImg = cv2.dilate(dotted, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))) & ~dotted
-            cv2.imshow("left and right lanes", lanesImg)
-            cv2.waitKey(1)
+            #cv2.imshow("left and right lanes", lanesImg)
+            #cv2.waitKey(1)
 
         else:
             # connect line segments into lines
-            connect = self.__connect_lines(filter)
+            connect = self.__connect_lines(filter, False)
 
             # find all remaining contours
             contours,_ = cv2.findContours(connect, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -114,10 +117,6 @@ class LaneObserver(Node):
 
                 temp.append((cnt, pixelsConnected, pixelsDotted / pixelsConnected))
                 
-            # keep 2 largest contours
-            self.get_logger().info('temp length: ' + str(len(temp)))
-            if temp is None:
-                self.get_logger().info('temp is none')
             contours = sorted(temp, key=lambda cnt: cnt[1], reverse=True)[:2]
 
             # get centerline between two largest contours
@@ -147,18 +146,6 @@ class LaneObserver(Node):
                 array.append((l[2]-160, 240-l[3]))
 
             array.sort(key=lambda pt: np.linalg.norm(pt))
-
-            # draw final points to image
-            canvas3C = np.zeros(shape3C, dtype='uint8')
-            for i in range(len(array)):
-                pt1 = (array[i][0]+160, 240-array[i][1])
-                cv2.circle(canvas3C, pt1, 2, (0,0,255))
-                cv2.putText(canvas3C, str(i), pt1, cv2.FONT_HERSHEY_DUPLEX, 0.5, (255,255,0))
-                if i < len(array)-1:
-                    pt2 = (array[i+1][0]+160, 240-array[i+1][1])
-                    cv2.line(canvas3C, pt1, pt2, (0,255,0))
-            cv2.imshow("final points", canvas3C)
-            cv2.waitKey(1)
 
             # publish points to 'lanes' topic
             lanes = Lanes()
@@ -219,6 +206,20 @@ class LaneObserver(Node):
             cv2.waitKey(1)
 
         return warp
+
+
+    def __find_intersections(self, img, debug_img=True):
+        filter = np.zeros((30, 30), dtype='float32')
+        cv2.line(filter, (14, 0), (14, 29), (1.0, 1.0, 1.0), self.line_width)
+        cv2.line(filter, (14, 14), (29, 14), (1.0, 1.0, 1.0), self.line_width)
+        cv2.imshow('filter', filter)
+        #filter /= np.sum(filter)
+        filter -= np.ones(filter.shape, dtype='float32') * 0.5
+
+        img = np.float32(img)
+
+        filtered = cv2.filter2D(img, 1, filter)
+        cv2.imshow('filtered', filtered / 255.0)
 
 
     def __filter_line_width(self, img, debug_img=True):
