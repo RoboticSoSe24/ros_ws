@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Int32
 
 import cv2
 from cv_bridge import CvBridge
@@ -10,7 +10,7 @@ import tensorflow as tf
 import numpy as np
 
 # Laden des Modells
-model = tf.keras.models.load_model('./models/model_0.keras')
+model = tf.keras.models.load_model('./models/model2.h5')
 
 
 class CameraViewer(Node):
@@ -34,6 +34,10 @@ class CameraViewer(Node):
 
         # Pub for Traffic-Light-Topic
         self.traffic_light_pub = self.create_publisher(Bool, 'traffic_light', 1)
+
+        # Pub for signs-Topic
+        self.sign_pub = self.create_publisher(Int32, 'signs', 1)
+
 
         self.drive = False
 
@@ -112,6 +116,10 @@ class CameraViewer(Node):
         predicted_class = np.argmax(prediction, axis=1)
         print(predicted_class)
 
+        #Pub sign
+        class_msg = Int32()
+        class_msg.data = int(predicted_class[0])
+        self.sign_pub.publish(class_msg)
 
 def main(args=None):
     rclpy.init(args=args)
