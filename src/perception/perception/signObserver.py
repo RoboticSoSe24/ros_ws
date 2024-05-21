@@ -6,7 +6,11 @@ from std_msgs.msg import Bool
 import cv2
 from cv_bridge import CvBridge
 
+import tensorflow as tf
 import numpy as np
+
+# Laden des Modells
+model = tf.keras.models.load_model('./models/model_0.keras')
 
 
 class CameraViewer(Node):
@@ -15,36 +19,49 @@ class CameraViewer(Node):
 
         self.bridge = CvBridge()
 
-        qos_policy = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
-                                          history=rclpy.qos.HistoryPolicy.KEEP_LAST,
-                                          depth=1)
+        qos_policy = rclpy.qos.QoSProfile(
+            reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
+            history=rclpy.qos.HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
 
         self.subscription = self.create_subscription(
             CompressedImage,
             '/image_raw/compressed',
-            self.scanner_callback,
-            qos_profile=qos_policy)
-        self.subscription
+            self.image_callback,
+            qos_profile=qos_policy
+        )
 
-        # Create a publisher for the traffic_light topic
+        # Pub for Traffic-Light-Topic
         self.traffic_light_pub = self.create_publisher(Bool, 'traffic_light', 1)
 
         self.drive = False
 
+    def image_callback(self, data):
+        # Convert message to OpenCV image and crop it
+        img_cv, cropped_img = self.process_image(data)
 
-    def scanner_callback(self, data):
+        # Call method
+        self.traffic_light_processing(cropped_img.copy())
+        self.street_sign_processing(cropped_img)
 
-        # convert message to opencv image
+    def process_image(self, data):
+        # Convert to OpenCV-Img
         img_cv = self.bridge.compressed_imgmsg_to_cv2(data, desired_encoding='passthrough')
 
-        # get image size
+        # Img size:
         height, width = img_cv.shape[:2]
         segment_height = height // 5
-        segment_width = width // 3
+        segment_width = width // 8
 
-        cropped_img = img_cv[2 * segment_height : 3 * segment_height, 2  * segment_width:]
+        # cut img
+        cropped_img = img_cv[2 * segment_height: 3 * segment_height, 7 * segment_width:]
+
+        return img_cv, cropped_img
+
+    def traffic_light_processing(self, cropped_img):
         height, width, _ = cropped_img.shape
-    
+
         B, G, R = cv2.split(cropped_img)
 
         total_rgb_img = np.zeros((height, width), dtype='uint16')
@@ -52,35 +69,48 @@ class CameraViewer(Node):
         total_rgb_img += G
         total_rgb_img += R
 
-        # Set pixels with total RGB value more than 600 to black
+        # Set pixels with a total RGB value above 600 to black
         thresh_upper = np.uint8(cv2.threshold(total_rgb_img, 600.0, 65535.0, cv2.THRESH_BINARY_INV)[1])
-        # Set pixels with total RGB value less than 150 to black
+        # Set pixels with a total RGB value below 150 to black
         thresh_lower = np.uint8(cv2.threshold(total_rgb_img, 150.0, 65535.0, cv2.THRESH_BINARY)[1])
-        # Set pixels to black if red to green difference is less than 80
+        # Set pixels to black if the difference between red and green is less than 80
         thresh_diff = np.uint8(cv2.threshold(np.abs(np.int16(G) - np.int16(R)), 80.0, 65535.0, cv2.THRESH_BINARY)[1])
 
-        # mask out areas from the original image where thresholds didn't pass
+        # apply mask
         mask = thresh_upper & thresh_lower & thresh_diff
         cropped_img &= cv2.merge((mask, mask, mask))
-        
-        # compare number of red to green pixels
-        total_red = cv2.sumElems(cropped_img[:,:,2])
-        total_green = cv2.sumElems(cropped_img[:,:,1])
+
+        # Comparison of the number of red and green pixels
+        total_red = cv2.sumElems(cropped_img[:, :, 2])
+        total_green = cv2.sumElems(cropped_img[:, :, 1])
 
         if total_red > total_green:
             self.drive = False
-            #self.get_logger().info('stoppen r = {}'.format(total_red))
         else:
             self.drive = True
-            #self.get_logger().info('fahren r = {}'.format(total_red))
 
-        # Publish to the traffic_light topic
+        # Publish message
         msg = Bool()
         msg.data = self.drive
         self.traffic_light_pub.publish(msg)
 
+    def street_sign_processing(self, cropped_img):
+        # Adjust and normalize image size
+        input_img = cv2.resize(cropped_img, (96, 80))
+        input_img = np.array(input_img).astype(np.float32)
+        input_img = input_img / 255.0  # Normalize pixel values
+        input_img = np.expand_dims(input_img, axis=0)  # add Batch-Dimension
+
+        # prediction
+        prediction = model.predict(input_img)
+
+        cv2.imshow("img", cropped_img)
         cv2.waitKey(1)
 
+        print(prediction)
+
+        predicted_class = np.argmax(prediction, axis=1)
+        print(predicted_class)
 
 
 def main(args=None):
@@ -89,6 +119,7 @@ def main(args=None):
     rclpy.spin(camera_viewer)
     camera_viewer.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
