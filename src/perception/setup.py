@@ -21,7 +21,8 @@ setup(
     entry_points={
         'console_scripts': [
             'laneObserver = perception.laneObserver:main',
-            'signObserver = perception.signObserver:main'
+            'signObserver = perception.signObserver:main',
+            'data = perception.data:main'
         ],
     },
 )

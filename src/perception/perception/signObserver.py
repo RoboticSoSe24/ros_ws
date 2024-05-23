@@ -10,7 +10,7 @@ import tensorflow as tf
 import numpy as np
 
 # Laden des Modells
-model = tf.keras.models.load_model('./models/model2.h5')
+model = tf.keras.models.load_model('./models/model4.keras')
 
 
 class CameraViewer(Node):
@@ -54,12 +54,7 @@ class CameraViewer(Node):
         img_cv = self.bridge.compressed_imgmsg_to_cv2(data, desired_encoding='passthrough')
 
         # Img size:
-        height, width = img_cv.shape[:2]
-        segment_height = height // 5
-        segment_width = width // 8
-
-        # cut img
-        cropped_img = img_cv[2 * segment_height: 3 * segment_height, 7 * segment_width:]
+        cropped_img = img_cv[85:130, 250:290]
 
         return img_cv, cropped_img
 
@@ -94,13 +89,14 @@ class CameraViewer(Node):
             self.drive = True
 
         # Publish message
+        # 0=left, middle=1, park=2, right=3
         msg = Bool()
         msg.data = self.drive
         self.traffic_light_pub.publish(msg)
 
     def street_sign_processing(self, cropped_img):
         # Adjust and normalize image size
-        input_img = cv2.resize(cropped_img, (96, 80))
+        input_img = cv2.resize(cropped_img, (45, 40))
         input_img = np.array(input_img).astype(np.float32)
         input_img = input_img / 255.0  # Normalize pixel values
         input_img = np.expand_dims(input_img, axis=0)  # add Batch-Dimension
@@ -111,12 +107,20 @@ class CameraViewer(Node):
         cv2.imshow("img", cropped_img)
         cv2.waitKey(1)
 
-        print(prediction)
+        #print(prediction)
 
+        # Get the predicted class and its probability
         predicted_class = np.argmax(prediction, axis=1)
-        print(predicted_class)
+        predicted_probability = np.max(prediction, axis=1)
+
+        print(f'Predicted class: {predicted_class}, Probability: {predicted_probability}')
+
+        # Check if the probability is below 0.8
+        #if predicted_probability[0] < 0.92:
+        #    predicted_class[0] = 4
 
         #Pub sign
+        # 0=left, middle=1, park=2, right=3, none=4
         class_msg = Int32()
         class_msg.data = int(predicted_class[0])
         self.sign_pub.publish(class_msg)
