@@ -18,7 +18,7 @@ class LaneObserver(Node):
 
         # declare parameters
         self.declare_parameter('canny_threshold', 40.0)
-        self.declare_parameter('line_width', 11)
+        self.declare_parameter('line_width', 9)
         self.declare_parameter('line_tolerance', 5)
         self.declare_parameter('lane_width', 170)
         self.declare_parameter('dot_line_length', 25)

@@ -117,7 +117,7 @@ class CameraViewer(Node):
 
         # Check if the probability is below 0.8
         #if predicted_probability[0] < 0.92:
-        #    predicted_class[0] = 4
+        predicted_class[0] = 3
 
         #Pub sign
         # 0=left, middle=1, park=2, right=3, none=4
