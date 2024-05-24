@@ -35,11 +35,11 @@ class CameraViewer(Node):
 
         # Pub for Traffic-Light-Topic
         self.traffic_light_pub = self.create_publisher(Bool, 'traffic_light', 1)
-        self.drive = False
 
         # Pub for signs-Topic
         self.sign_pub = self.create_publisher(Int32, 'signs', 1)
         self.last_sign = 2
+
 
     def image_callback(self, data):
         # retrieve camera image
@@ -51,7 +51,7 @@ class CameraViewer(Node):
 
         # check cropped image for traffic lights and signs
         self.__find_traffic_light(cropped_img.copy())
-        self.__find_traffic_sign(cropped_img.copy())
+        self.__find_traffic_sign(img_cv)
 
 
     def __find_traffic_light(self, cropped_img):
@@ -79,43 +79,36 @@ class CameraViewer(Node):
         total_red = cv2.sumElems(cropped_img[:, :, 2])
         total_green = cv2.sumElems(cropped_img[:, :, 1])
 
-        if total_red > total_green:
-            self.drive = False
-        else:
-            self.drive = True
-
         # Publish message
         msg = Bool()
-        msg.data = self.drive
+        msg.data = False if total_red > total_green else True
         self.traffic_light_pub.publish(msg)
 
 
-    def __find_traffic_sign(self, cropped_img):
-        # prepare image to pass onto CNN model
-        input_img = cv2.resize(cropped_img, (50, 42))
-        input_img = cv2.cvtColor(input_img, cv2.COLOR_BGR2GRAY)
-        input_img = np.float32(np.array(input_img)) / 255       # Normalize pixel values
-        input_img = np.expand_dims(input_img, axis=0)           # add Batch-Dimension
+    def __find_traffic_sign(self, img_cv):
+        # cut out multiple images to pass to CNN
+        input_images = np.zeros((3, 50, 42))
+        for i in range(3):
+            crop = img_cv[85 : 130, 250+i*8 : 290+i*8]          # cut out at slight offset
+            crop = cv2.resize(crop, (42, 50))                   # adjust size
+            crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)       # convert to grayscale
+            crop = np.float32(np.array(crop)) / 255             # normalize pixel values
+            input_images[i,:,:] = crop
 
-        # get predicted class and its probability
-        prediction = model.predict(input_img, verbose=0)
-        predicted_class = np.argmax(prediction, axis=1)[0]      # left=0, middle=1, none=2, park=3, right=4
-        predicted_probability = np.max(prediction, axis=1)
+        # find most common prediction among input images
+        prediction = model.predict(input_images, verbose=0)
+        pred_sum = np.zeros(5)
+        for p in prediction:
+            pred_sum += p
+        pred_class = np.argmax(pred_sum)
 
-        # favor no decision over wrong decisions
-        if predicted_probability < 0.8:
-            predicted_class = 2
+        # publish sign
+        msg = Int32()
+        msg.data = int(pred_class if pred_class == self.last_sign else 2)
+        self.sign_pub.publish(msg)
 
-        cv2.putText(cropped_img, str(predicted_class), (3,10), cv2.FONT_HERSHEY_PLAIN, 1, (0,0,255))
-        cv2.imshow("img", cropped_img)
-        cv2.waitKey(1)
+        self.last_sign = pred_class
 
-        # pub sign
-        class_msg = Int32()
-        class_msg.data = int(predicted_class if predicted_class == self.last_sign else 2)
-        self.sign_pub.publish(class_msg)
-
-        self.last_sign = predicted_class
 
 
 def main(args=None):
