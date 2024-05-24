@@ -26,6 +26,7 @@ class DriveOnParkingSlot(Node):
         self.declare_parameter('scan_width', 0.35)
         self.declare_parameter('idle_drive_time', 9.0)
         self.declare_parameter('parking_time', 10.0)
+        self.declare_parameter('max_distance', 16.0)
         
         # definition of the QoS in order to receive data despite WiFi
         qos_policy = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
@@ -87,15 +88,25 @@ class DriveOnParkingSlot(Node):
     def parking_callback(self, request, response):
         idle_drive_time = self.get_parameter('idle_drive_time').get_parameter_value().double_value
         parking_time = self.get_parameter('parking_time').get_parameter_value().double_value
+        max_distance = self.get_parameter('max_distance').get_parameter_value().double_value
 
         self.get_logger().info('search for free parking slot')
+
+        total = 0
 
         while idle_drive_time > 0 or self.counter != 0:
             req = FollowLane.Request()
             req.right_lane = True
             self.__sync_call(self.driving_client, req)
+
             time.sleep(0.1)
             idle_drive_time -= 0.1
+
+            total += 0.1
+            self.get_logger().info(f'total: {total}')
+            if total > max_distance:
+                self.get_logger().info('no free spot available')
+                return response
 
         self.get_logger().info('drive onto parking slot')    
         self.__rotate_90_deg()
