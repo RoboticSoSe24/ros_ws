@@ -24,7 +24,6 @@ class DriveOnParkingSlot(Node):
         # declaration of parameters that can be changed at runtime
         self.declare_parameter('scan_height', 0.34)
         self.declare_parameter('scan_width', 0.35)
-        self.declare_parameter('parking_slot_distance', 0.5)
         self.declare_parameter('parking_time', 10)
         
         # definition of the QoS in order to receive data despite WiFi

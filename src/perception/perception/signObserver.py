@@ -10,10 +10,11 @@ import tensorflow as tf
 import numpy as np
 
 # Laden des Modells
-model = tf.keras.models.load_model('./models/model4.keras')
+model = tf.keras.models.load_model('./models/model_0.keras')
 
 
 class CameraViewer(Node):
+
     def __init__(self):
         super().__init__('camera_viewer')
 
@@ -34,31 +35,26 @@ class CameraViewer(Node):
 
         # Pub for Traffic-Light-Topic
         self.traffic_light_pub = self.create_publisher(Bool, 'traffic_light', 1)
+        self.drive = False
 
         # Pub for signs-Topic
         self.sign_pub = self.create_publisher(Int32, 'signs', 1)
-
-
-        self.drive = False
+        self.last_sign = 2
 
     def image_callback(self, data):
-        # Convert message to OpenCV image and crop it
-        img_cv, cropped_img = self.process_image(data)
-
-        # Call method
-        self.traffic_light_processing(cropped_img.copy())
-        self.street_sign_processing(cropped_img)
-
-    def process_image(self, data):
-        # Convert to OpenCV-Img
+        # retrieve camera image
         img_cv = self.bridge.compressed_imgmsg_to_cv2(data, desired_encoding='passthrough')
+        img_cv = cv2.resize(img_cv, (320, 240))     # constant resize for later cropping
 
-        # Img size:
+        # crop out relevant part of the image
         cropped_img = img_cv[85:130, 250:290]
 
-        return img_cv, cropped_img
+        # check cropped image for traffic lights and signs
+        self.__find_traffic_light(cropped_img.copy())
+        self.__find_traffic_sign(cropped_img.copy())
 
-    def traffic_light_processing(self, cropped_img):
+
+    def __find_traffic_light(self, cropped_img):
         height, width, _ = cropped_img.shape
 
         B, G, R = cv2.split(cropped_img)
@@ -89,41 +85,38 @@ class CameraViewer(Node):
             self.drive = True
 
         # Publish message
-        # 0=left, middle=1, park=2, right=3
         msg = Bool()
         msg.data = self.drive
         self.traffic_light_pub.publish(msg)
 
-    def street_sign_processing(self, cropped_img):
-        # Adjust and normalize image size
-        input_img = cv2.resize(cropped_img, (45, 40))
-        input_img = np.array(input_img).astype(np.float32)
-        input_img = input_img / 255.0  # Normalize pixel values
-        input_img = np.expand_dims(input_img, axis=0)  # add Batch-Dimension
 
-        # prediction
-        prediction = model.predict(input_img)
+    def __find_traffic_sign(self, cropped_img):
+        # prepare image to pass onto CNN model
+        input_img = cv2.resize(cropped_img, (50, 42))
+        input_img = cv2.cvtColor(input_img, cv2.COLOR_BGR2GRAY)
+        input_img = np.float32(np.array(input_img)) / 255       # Normalize pixel values
+        input_img = np.expand_dims(input_img, axis=0)           # add Batch-Dimension
 
+        # get predicted class and its probability
+        prediction = model.predict(input_img, verbose=0)
+        predicted_class = np.argmax(prediction, axis=1)[0]      # left=0, middle=1, none=2, park=3, right=4
+        predicted_probability = np.max(prediction, axis=1)
+
+        # favor no decision over wrong decisions
+        if predicted_probability < 0.8:
+            predicted_class = 2
+
+        cv2.putText(cropped_img, str(predicted_class), (3,10), cv2.FONT_HERSHEY_PLAIN, 1, (0,0,255))
         cv2.imshow("img", cropped_img)
         cv2.waitKey(1)
 
-        #print(prediction)
-
-        # Get the predicted class and its probability
-        predicted_class = np.argmax(prediction, axis=1)
-        predicted_probability = np.max(prediction, axis=1)
-
-        print(f'Predicted class: {predicted_class}, Probability: {predicted_probability}')
-
-        # Check if the probability is below 0.8
-        #if predicted_probability[0] < 0.92:
-        predicted_class[0] = 3
-
-        #Pub sign
-        # 0=left, middle=1, park=2, right=3, none=4
+        # pub sign
         class_msg = Int32()
-        class_msg.data = int(predicted_class[0])
+        class_msg.data = int(predicted_class if predicted_class == self.last_sign else 2)
         self.sign_pub.publish(class_msg)
+
+        self.last_sign = predicted_class
+
 
 def main(args=None):
     rclpy.init(args=args)
