@@ -10,6 +10,8 @@ from interfaces.srv import ParkingSpace
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 
+import math
+
 import time
 
 class DriveOnParkingSlot(Node):
@@ -20,7 +22,8 @@ class DriveOnParkingSlot(Node):
         self.cb_group = ReentrantCallbackGroup()
 
         # declaration of parameters that can be changed at runtime
-        self.declare_parameter('scan_angle', 110.0)
+        self.declare_parameter('scan_height', 0.34)
+        self.declare_parameter('scan_width', 0.35)
         self.declare_parameter('parking_slot_distance', 0.5)
         self.declare_parameter('parking_time', 10)
         
@@ -39,6 +42,9 @@ class DriveOnParkingSlot(Node):
 
         # variable for the last laserscan reading
         self.min_distance = float('inf')
+
+        # variable for number of scanners recognizing the obstacle
+        self.counter = 0
         
         # create publisher for driving commands
         self.velocity_publisher = self.create_publisher(Twist, 'cmd_vel', 1)
@@ -62,17 +68,26 @@ class DriveOnParkingSlot(Node):
 
 
     def scanner_callback(self, msg):
-        direction   = 270.0
-        fov         = self.get_parameter('scan_angle').get_parameter_value().double_value
+        self.counter = 0
+        height = self.get_parameter('scan_height').get_parameter_value().double_value
+        width = self.get_parameter('scan_width').get_parameter_value().double_value
 
-        self.min_distance = float('inf')
+        def length(a):
 
-        # find the closest object on the right hand side 
-        for i in range(int(direction - fov/2), int(direction + fov/2)):
-            d = msg.ranges[i]
-            if d != 0.0 and d < self.min_distance:
-                self.min_distance = d
-                #print(self.min_distance)
+            x = min(height / 2     * abs(math.tan(a)), width)
+            y = min(x         / abs(math.tan(a)), height / 2)
+
+            return math.sqrt(x**2 + y**2)
+        
+        # find the closest object within the right box
+        for a in range(181, 360):
+            a_rad = math.radians(a)
+            l = length(a_rad)
+            d = msg.ranges[a]
+            if d != 0.0 and d < l:
+                self.counter += 1
+
+        self.get_logger().info('Counter: ' + str(self.counter))
 
 
     def parking_callback(self, request, response):
@@ -86,7 +101,7 @@ class DriveOnParkingSlot(Node):
             self.__sync_call(self.driving_client, req)
             time.sleep(0.1)
 
-        while self.min_distance < distance:
+        while self.counter != 0:
             req = FollowLane.Request()
             req.right_lane = True
             self.__sync_call(self.driving_client, req)
