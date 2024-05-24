@@ -39,7 +39,7 @@ class CameraViewer(Node):
 
         # Pub for signs-Topic
         self.sign_pub = self.create_publisher(Int32, 'signs', 1)
-
+        self.last_sign = 2
 
     def image_callback(self, data):
         # retrieve camera image
@@ -112,9 +112,10 @@ class CameraViewer(Node):
 
         # pub sign
         class_msg = Int32()
-        class_msg.data = int(predicted_class)
+        class_msg.data = int(predicted_class if predicted_class == self.last_sign else 2)
         self.sign_pub.publish(class_msg)
 
+        self.last_sign = predicted_class
 
 
 def main(args=None):
