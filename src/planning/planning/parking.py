@@ -22,9 +22,10 @@ class DriveOnParkingSlot(Node):
         self.cb_group = ReentrantCallbackGroup()
 
         # declaration of parameters that can be changed at runtime
-        self.declare_parameter('scan_height', 0.34)
+        self.declare_parameter('scan_height', 0.38)
         self.declare_parameter('scan_width', 0.35)
-        self.declare_parameter('parking_time', 10)
+        self.declare_parameter('idle_drive_time', 9.0)
+        self.declare_parameter('parking_time', 10.0)
         
         # definition of the QoS in order to receive data despite WiFi
         qos_policy = rclpy.qos.QoSProfile(reliability=rclpy.qos.ReliabilityPolicy.BEST_EFFORT,
@@ -60,25 +61,21 @@ class DriveOnParkingSlot(Node):
             'park_in_space',
             self.parking_callback)
 
-        timer_period = 1  # seconds
-        #self.timer = self.create_timer(timer_period, self.parking_callback)
-
         self.get_logger().info('initialized Parking')
 
 
     def scanner_callback(self, msg):
-        self.counter = 0
         height = self.get_parameter('scan_height').get_parameter_value().double_value
         width = self.get_parameter('scan_width').get_parameter_value().double_value
 
+        # calculate scan distance for angle in box 
         def length(a):
-
-            x = min(height / 2     * abs(math.tan(a)), width)
-            y = min(x         / abs(math.tan(a)), height / 2)
-
+            x = min(height/2 * abs(math.tan(a)), width)
+            y = min(x / abs(math.tan(a)), height/2)
             return math.sqrt(x**2 + y**2)
         
-        # find the closest object within the right box
+        # count objects within a box to the right
+        self.counter = 0
         for a in range(181, 360):
             a_rad = math.radians(a)
             l = length(a_rad)
@@ -86,39 +83,33 @@ class DriveOnParkingSlot(Node):
             if d != 0.0 and d < l:
                 self.counter += 1
 
-        self.get_logger().info('Counter: ' + str(self.counter))
-
 
     def parking_callback(self, request, response):
-        distance = self.get_parameter('parking_slot_distance').get_parameter_value().double_value
-        parking_time = self.get_parameter('parking_time').get_parameter_value().integer_value
+        idle_drive_time = self.get_parameter('idle_drive_time').get_parameter_value().double_value
+        parking_time = self.get_parameter('parking_time').get_parameter_value().double_value
 
         self.get_logger().info('search for free parking slot')
-        for i in range(0, 80):
+
+        while idle_drive_time > 0 or self.counter != 0:
             req = FollowLane.Request()
             req.right_lane = True
             self.__sync_call(self.driving_client, req)
             time.sleep(0.1)
+            idle_drive_time -= 0.1
 
-        while self.counter != 0:
-            req = FollowLane.Request()
-            req.right_lane = True
-            self.__sync_call(self.driving_client, req)
-
-        self.get_logger().info('found free parking slot')
         self.get_logger().info('drive onto parking slot')    
         self.__rotate_90_deg()
-        self.__drive_straight(2)
+        self.__drive_straight(2.1)
+        self.__rotate_90_deg(True)
         self.__stop()
 
         self.get_logger().info('parking...')
-        self.__stay_on_slot(parking_time)
+        self.__stop()
+        time.sleep(parking_time)
 
         self.get_logger().info('leave parking slot')
-        self.__rotate_90_deg()
-        self.__rotate_90_deg()
-        self.__drive_straight(2.2)
-        self.__stop()
+        self.__rotate_90_deg(True)
+        self.__drive_straight(2.1)
         self.__rotate_90_deg()
         self.__stop()
 
@@ -143,13 +134,6 @@ class DriveOnParkingSlot(Node):
     def __drive_straight(self, seconds):
         msg = Twist()
         msg.linear.x = 0.13
-        msg.angular.z = 0.0
-        self.velocity_publisher.publish(msg)
-        time.sleep(seconds)
-
-    def __stay_on_slot(self, seconds):
-        msg = Twist()
-        msg.linear.x = 0.0
         msg.angular.z = 0.0
         self.velocity_publisher.publish(msg)
         time.sleep(seconds)

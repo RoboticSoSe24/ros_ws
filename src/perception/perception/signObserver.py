@@ -18,6 +18,9 @@ class CameraViewer(Node):
     def __init__(self):
         super().__init__('camera_viewer')
 
+        # declare parameters
+        self.declare_parameter('min_sign_count', 10)
+
         self.bridge = CvBridge()
 
         qos_policy = rclpy.qos.QoSProfile(
@@ -38,7 +41,8 @@ class CameraViewer(Node):
 
         # Pub for signs-Topic
         self.sign_pub = self.create_publisher(Int32, 'signs', 1)
-        self.last_sign = 2
+        self.sign = 2
+        self.sign_count = 0
 
 
     def image_callback(self, data):
@@ -86,6 +90,8 @@ class CameraViewer(Node):
 
 
     def __find_traffic_sign(self, img_cv):
+        min_sign_count = self.get_parameter('min_sign_count').get_parameter_value().integer_value
+
         # cut out multiple images to pass to CNN
         input_images = np.zeros((3, 50, 42))
         for i in range(3):
@@ -102,12 +108,16 @@ class CameraViewer(Node):
             pred_sum += p
         pred_class = np.argmax(pred_sum)
 
+        # count consecutive occurrences of sign class
+        if pred_class != self.sign:
+            self.sign_count = 0
+            self.sign = pred_class
+        self.sign_count += 1
+
         # publish sign
         msg = Int32()
-        msg.data = int(pred_class if pred_class == self.last_sign else 2)
+        msg.data = int(pred_class if self.sign_count > min_sign_count else 2)
         self.sign_pub.publish(msg)
-
-        self.last_sign = pred_class
 
 
 
