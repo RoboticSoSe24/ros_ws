@@ -75,6 +75,7 @@ class DefaultDriving(Node):
 
         speed_drive = (1 / (self.x_sum + 100)) * 150 * speed_drive
 
+        #print("drive: %d turn: %d" % (speed_drive, speed_turn))
         if self.m is not None:
             if self.m < boundary_left:
                 turn *= 1

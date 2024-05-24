@@ -5,6 +5,8 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 
 from interfaces.srv import FollowLane
 
+from interfaces.srv import ParkingSpace
+
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 
@@ -18,8 +20,8 @@ class DriveOnParkingSlot(Node):
         self.cb_group = ReentrantCallbackGroup()
 
         # declaration of parameters that can be changed at runtime
-        self.declare_parameter('scan_angle', 100.0)
-        self.declare_parameter('parking_slot_distance', 0.3)
+        self.declare_parameter('scan_angle', 110.0)
+        self.declare_parameter('parking_slot_distance', 0.5)
         self.declare_parameter('parking_time', 10)
         
         # definition of the QoS in order to receive data despite WiFi
@@ -47,14 +49,14 @@ class DriveOnParkingSlot(Node):
             'follow_lanes',
             callback_group=self.cb_group)
 
-        ## create service for DriveOnParkingSlot
-        #self.service = self.create_service(
-        #    DriveOnParkingSlot,
-        #    'drive_on_parking_slot',
-        #    self.parking_callback)
+        # create service for parking
+        self.service = self.create_service(
+            ParkingSpace,
+            'park_in_space',
+            self.parking_callback)
 
         timer_period = 1  # seconds
-        self.timer = self.create_timer(timer_period, self.parking_callback)
+        #self.timer = self.create_timer(timer_period, self.parking_callback)
 
         self.get_logger().info('initialized Parking')
 
@@ -70,18 +72,19 @@ class DriveOnParkingSlot(Node):
             d = msg.ranges[i]
             if d != 0.0 and d < self.min_distance:
                 self.min_distance = d
+                #print(self.min_distance)
 
 
-    def parking_callback(self):       
+    def parking_callback(self, request, response):
         distance = self.get_parameter('parking_slot_distance').get_parameter_value().double_value
         parking_time = self.get_parameter('parking_time').get_parameter_value().integer_value
 
         self.get_logger().info('search for free parking slot')
-        for i in range (0,10):
+        for i in range(0, 80):
             req = FollowLane.Request()
             req.right_lane = True
             self.__sync_call(self.driving_client, req)
-            time.sleep(0.5)
+            time.sleep(0.1)
 
         while self.min_distance < distance:
             req = FollowLane.Request()
@@ -105,7 +108,7 @@ class DriveOnParkingSlot(Node):
         self.__rotate_90_deg()
         self.__stop()
 
-        #return response
+        return response
 
 
     def __sync_call(self, client, request):
