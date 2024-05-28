@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rcl_interfaces.msg import SetParametersResult
 
 from interfaces.msg import Lanes
 from geometry_msgs.msg import Point
@@ -11,22 +12,56 @@ from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge, CvBridgeError
 
 
+
+class TrackbarParameter():
+
+    def __init__(self, node, name, window_name, val, max_val):
+        self.node = node
+        self.name = name
+        self.window_name = window_name
+        self.val = val
+        self.max_val = max_val
+
+        node.declare_parameter(name, val)
+        node.add_on_set_parameters_callback(self.on_parameters)
+
+        cv2.createTrackbar(name, window_name, int(val), int(max_val), self.on_trackbar)
+
+    def on_trackbar(self, val):
+        self.val = val
+
+    def on_parameters(self, params):
+        for param in params:
+            if param.name == self.name:
+                self.val = param.value
+                cv2.setTrackbarPos(self.name, self.window_name, int(self.val)) 
+        return SetParametersResult(successful=True)
+
+    def __int__(self):
+        return int(self.val)
+    
+    def __float__(self):
+        return float(self.val)
+
+
+
 class LaneObserver(Node):
 
     def __init__(self):
         super().__init__('lane_observer')
 
-        # declare parameters
-        self.declare_parameter('canny_threshold', 40.0)
-        self.declare_parameter('line_width', 9)
-        self.declare_parameter('line_tolerance', 5)
-        self.declare_parameter('lane_width', 170)
-        self.declare_parameter('dot_line_length', 25)
-        self.declare_parameter('dot_line_tolerance', 5)
+        # declare relevant windows
+        cv2.namedWindow("line width filter")
+        cv2.namedWindow("contour 1, contour 2, centerline")
+        cv2.namedWindow("dotted line")
 
-        # create timer for updating parameter values
-        self.parameterTimer = self.create_timer(3, self.parameter_callback)
-        self.parameter_callback()
+        # declare parameters
+        self.canny_threshold    = TrackbarParameter(self, 'canny_threshold',    "line width filter",                50.0, 255.0)
+        self.line_width         = TrackbarParameter(self, 'line_width',         "line width filter",                9,    20)
+        self.line_tolerance     = TrackbarParameter(self, 'line_tolerance',     "line width filter",                4,    10)
+        self.lane_width         = TrackbarParameter(self, 'lane_width',         "contour 1, contour 2, centerline", 170,  350)
+        self.dot_line_length    = TrackbarParameter(self, 'dot_line_length',    "dotted line",                      25,   40)
+        self.dot_line_tolerance = TrackbarParameter(self, 'dot_line_tolerance', "dotted line",                      5,    10)
 
         # init openCV-bridge
         self.bridge = CvBridge()
@@ -50,17 +85,6 @@ class LaneObserver(Node):
         self.get_logger().info('initialized laneObserver')
 
 
-    def parameter_callback(self):
-        # fetch parameters
-        self.canny_threshold    = self.get_parameter('canny_threshold').get_parameter_value().double_value
-        self.line_width         = self.get_parameter('line_width').get_parameter_value().integer_value
-        self.line_tolerance     = self.get_parameter('line_tolerance').get_parameter_value().integer_value
-        self.lane_width         = self.get_parameter('lane_width').get_parameter_value().integer_value
-        self.dot_line_length    = self.get_parameter('dot_line_length').get_parameter_value().integer_value
-        self.dot_line_tolerance = self.get_parameter('dot_line_tolerance').get_parameter_value().integer_value
-        self.get_logger().info('parameters updated')
-
-
     def image_callback(self, data):
         imSize = (320, 240)
         shape1C = (imSize[1], imSize[0], 1)
@@ -72,16 +96,13 @@ class LaneObserver(Node):
         # get lightness channel
         img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2HLS)
         img_cv = cv2.split(img_cv)[1]
-        cv2.imshow("source", img_cv)
+        #cv2.imshow("source", img_cv)
 
         # undistort image
-        img_cv = self.__undistort(img_cv)
+        img_cv = self.__undistort(img_cv, False)
 
         # warp perspective
-        warp = self.__perspective_transform(img_cv, imSize)
-
-        # find line intersections hinting at parking spots
-        self.__find_intersections(warp)
+        warp = self.__perspective_transform(img_cv, imSize, False)
 
         # filter for line segments with the correct width
         filter = self.__filter_line_width(warp)
@@ -90,7 +111,7 @@ class LaneObserver(Node):
         found_dotted, dotted = self.__find_dotted_line(filter)
 
         if found_dotted:
-            dotted = cv2.dilate(dotted, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.lane_width, self.lane_width)))
+            dotted = cv2.dilate(dotted, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(self.lane_width), int(self.lane_width))))
             lanesImg = cv2.dilate(dotted, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))) & ~dotted
 
         if True:
@@ -120,9 +141,9 @@ class LaneObserver(Node):
 
             # get centerline between two largest contours
             img1 = np.zeros(shape1C[:2], dtype='uint8')
-            cv2.drawContours(img1, [contours[0][0]], 0, (255,255,255), self.lane_width) # dilate to achieve an overlap with the other line
+            cv2.drawContours(img1, [contours[0][0]], 0, (255,255,255), int(self.lane_width)) # dilate to achieve an overlap with the other line
             img2 = np.zeros(shape1C[:2], dtype='uint8')
-            cv2.drawContours(img2, [contours[1][0]], 0, (255,255,255), self.lane_width) # dilate to achieve an overlap with the other line
+            cv2.drawContours(img2, [contours[1][0]], 0, (255,255,255), int(self.lane_width)) # dilate to achieve an overlap with the other line
             centerImg = cv2.ximgproc.thinning(img1 & img2, 0)                           # binary AND to get only overlap region
             cv2.rectangle(centerImg, (0,0), imSize, (0,0,0), 2)                         # mask out points on the edges of the image 
             canvas3C = np.zeros(shape3C, dtype='uint8')
@@ -207,23 +228,9 @@ class LaneObserver(Node):
         return warp
 
 
-    def __find_intersections(self, img, debug_img=True):
-        filter = np.zeros((30, 30), dtype='float32')
-        cv2.line(filter, (14, 0), (14, 29), (1.0, 1.0, 1.0), self.line_width)
-        cv2.line(filter, (14, 14), (29, 14), (1.0, 1.0, 1.0), self.line_width)
-        cv2.imshow('filter', filter)
-        #filter /= np.sum(filter)
-        filter -= np.ones(filter.shape, dtype='float32') * 0.5
-
-        img = np.float32(img)
-
-        filtered = cv2.filter2D(img, 1, filter)
-        cv2.imshow('filtered', filtered / 255.0)
-
-
     def __filter_line_width(self, img, debug_img=True):
         # find edges
-        edges = cv2.Canny(img, self.canny_threshold, self.canny_threshold * 3)
+        edges = cv2.Canny(img, float(self.canny_threshold), float(self.canny_threshold) * 3.0)
 
         # cover edges found near the corners by perspective transformation
         _,empty = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV)
@@ -232,7 +239,7 @@ class LaneObserver(Node):
 
         # connect close enough edges to lines through dilation
         dilate = cv2.dilate(edges, cv2.getStructuringElement(                   
-            cv2.MORPH_ELLIPSE, (self.line_width, self.line_width)))  
+            cv2.MORPH_ELLIPSE, (int(self.line_width), int(self.line_width))))  
         
         # prevent connections to the edges of the image
         cv2.rectangle(dilate, (0,0), (dilate.shape[1]-1, dilate.shape[0]-1), (0,0,0), 1)
@@ -241,12 +248,12 @@ class LaneObserver(Node):
         # remove lines thinner than minimum width through multiple erosion steps
         # 1. erode original dilation
         erode = cv2.erode(dilate, cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (self.line_width, self.line_width)))
+            cv2.MORPH_ELLIPSE, (int(self.line_width), int(self.line_width))))
         # 2. remove edges
         erode &= ~edges
         # 3. erode further to remove lines thinner than desired
         erode = cv2.erode(erode, cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (self.line_width - self.line_tolerance, self.line_width - self.line_tolerance)))
+            cv2.MORPH_ELLIPSE, (int(self.line_width) - int(self.line_tolerance), int(self.line_width) - int(self.line_tolerance))))
 
         # remove very small leftovers
         filter = cv2.boxFilter(erode, -1, (5, 5))
@@ -277,7 +284,7 @@ class LaneObserver(Node):
             ptMax = max(cnt, key=lambda pt: pt[0][1])[0]
             ptMin = min(cnt, key=lambda pt: pt[0][1])[0]
             d = np.linalg.norm(ptMin - ptMax)
-            if d > self.dot_line_length - self.dot_line_tolerance and d < self.dot_line_length + self.dot_line_tolerance:
+            if d > int(self.dot_line_length) - int(self.dot_line_tolerance) and d < int(self.dot_line_length) + int(self.dot_line_tolerance):
                 cv2.drawContours(canvas, [cnt], 0, (0,0,255))
                 cv2.putText(canvas, str(d), ptMax, cv2.FONT_HERSHEY_DUPLEX, 0.5, (255,255,255))
                 segments.append((ptMin, ptMax, (ptMin - ptMax) / d))
@@ -300,7 +307,7 @@ class LaneObserver(Node):
                 dev = np.linalg.norm(np.cross(line[-1][1]-line[-1][0], line[-1][0]-seg[1])) / np.linalg.norm(line[-1][1]-line[-1][0])
                 dot = np.dot(line[-1][2], seg[2])
                 dist = np.linalg.norm(line[-1][0] - seg[1])
-                if dev < self.dot_line_length and dot > 0.90 and dist > self.dot_line_length:
+                if dev < int(self.dot_line_length) and dot > 0.90 and dist > int(self.dot_line_length):
                     line.append(seg)
             lines.append(line)
 
@@ -344,16 +351,16 @@ class LaneObserver(Node):
             top = max(cnt, key=lambda pt: pt[0][1])[0]
             bot = min(cnt, key=lambda pt: pt[0][1])[0]
 
-            if (top[1] == bot[1]) or (np.linalg.norm(top - bot) > self.dot_line_length + 5):
+            if (top[1] == bot[1]) or (np.linalg.norm(top - bot) > int(self.dot_line_length) + 5):
                 continue
-            vec = (top - bot) / np.linalg.norm(top - bot) * self.dot_line_length / 2
+            vec = (top - bot) / np.linalg.norm(top - bot) * int(self.dot_line_length) / 2
             vec = np.int0(vec)
             
             cv2.line(connect, top+vec, bot-vec, (255,255,255), 1)
 
         # dilate to connect dotted line into one contour
         connect = cv2.dilate(connect, cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (self.dot_line_length, self.dot_line_length)))     
+            cv2.MORPH_ELLIPSE, (int(self.dot_line_length), int(self.dot_line_length))))     
         
         # avoid shrinking artifacts on the edges
         cv2.rectangle(connect, (0, 0), (connect.shape[1]-1, connect.shape[0]-1), (0,0,0), 1)    
