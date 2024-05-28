@@ -18,10 +18,10 @@ class LaneObserver(Node):
 
         # declare parameters
         self.declare_parameter('canny_threshold', 40.0)
-        self.declare_parameter('line_width', 8)
-        self.declare_parameter('line_tolerance', 4)
-        self.declare_parameter('lane_width', 130)
-        self.declare_parameter('dot_line_length', 20)
+        self.declare_parameter('line_width', 9)
+        self.declare_parameter('line_tolerance', 5)
+        self.declare_parameter('lane_width', 170)
+        self.declare_parameter('dot_line_length', 25)
         self.declare_parameter('dot_line_tolerance', 5)
 
         # create timer for updating parameter values
@@ -92,10 +92,8 @@ class LaneObserver(Node):
         if found_dotted:
             dotted = cv2.dilate(dotted, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (self.lane_width, self.lane_width)))
             lanesImg = cv2.dilate(dotted, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))) & ~dotted
-            #cv2.imshow("left and right lanes", lanesImg)
-            #cv2.waitKey(1)
 
-        else:
+        if True:
             # connect line segments into lines
             connect = self.__connect_lines(filter, False)
 
@@ -117,6 +115,7 @@ class LaneObserver(Node):
 
                 temp.append((cnt, pixelsConnected, pixelsDotted / pixelsConnected))
                 
+            # keep 2 largest contours
             contours = sorted(temp, key=lambda cnt: cnt[1], reverse=True)[:2]
 
             # get centerline between two largest contours
@@ -185,8 +184,8 @@ class LaneObserver(Node):
 
         k = c / 640
         pts1 = np.float32([             # undistorted source points
-            [k*231 + 1.5*c, k*324 + 3*r], 
-            [k*350 + 1.5*c, k*322 + 3*r], 
+            [k*228 + 1.5*c, k*324 + 3*r], 
+            [k*353 + 1.5*c, k*322 + 3*r], 
             [k*161 + 1.5*c, k*426 + 3*r], 
             [k*412 + 1.5*c, k*419 + 3*r]])
         pts2 = np.float32([             # destination points

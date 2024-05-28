@@ -12,6 +12,8 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Lanes.msg"
   "srv/FollowLane.srv"
+  "srv/OvertakeObstruction.srv"
+   "srv/ParkingSpace.srv"
   DEPENDENCIES geometry_msgs
 )
 
