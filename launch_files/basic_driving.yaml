@@ -19,3 +19,8 @@ launch:
     pkg: "planning"
     exec: "defaultDriving"
     name: "defaultdriving"
+
+- node:
+      pkg: "planning"
+      exec: "parking"
+      name: "parking"
