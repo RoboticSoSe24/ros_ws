@@ -50,7 +50,7 @@ class StateController(Node):
             Bool, 'traffic_light', self.traffic_light_callback, 1, callback_group=self.cb_group
         )
 
-        self.traffic_light_clear = False  # variable for the last traffic light message
+        self.traffic_light_clear = True  # variable for the last traffic light message
 
         # create subscriber for signs
         self.signs_subscription = self.create_subscription(

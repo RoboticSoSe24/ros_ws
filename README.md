@@ -41,7 +41,12 @@ First in the workspace directory call:
 source install/setup.bash
 ```
 
-then launch according to the task via:
+for configuring lane detection parameters before starting to drive call:
+- ```ros2 run perception laneObserver``` then
+- ```ros2 launch launch_files/no_lanes.yaml```
+
+
+alternatively launch without additional configuration according to the task via:
 - ```ros2 launch launch_files/basic_driving.yaml``` 
   ...for basic lane following, stopping in front of obstructions, and parking behind parking signs
 - ```ros2 launch launch_files/obstruction.yaml```
