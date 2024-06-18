@@ -1,0 +1,5 @@
+uint8 SIGN_LEFT = 0
+uint8 SIGN_STRAIGHT = 1
+uint8 SIGN_RIGHT = 2
+uint8 sign
+---

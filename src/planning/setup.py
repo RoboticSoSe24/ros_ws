@@ -23,7 +23,8 @@ setup(
             'defaultDriving     = planning.defaultDriving:main',
             'stateController    = planning.stateController:main',
             'obstruction        = planning.obstruction:main',
-            'parking            = planning.parking:main'
+            'parking            = planning.parking:main',
+            'crossroad          = planning.crossroad:main'
         ],
     },
 )
