@@ -157,6 +157,16 @@ class StateController(Node):
             req = ParkingSpace.Request()
             self.__sync_call(self.parking_client, req)
 
+        # crossroad
+        elif self.last_sign is not None and self.last_sign != 2 and self.crossroad_client.service_is_ready():
+            self.__pub_state('crossing intersection')
+            req = CrossIntersection.Request()
+            match self.last_sign:
+                case 0: req.sign = CrossIntersection.Request.SIGN_LEFT
+                case 1: req.sign = CrossIntersection.Request.SIGN_STRAIGHT
+                case 4: req.sign = CrossIntersection.Request.SIGN_RIGHT
+            self.__sync_call(self.crossroad_client, req)
+
         # default driving
         elif self.driving_client.service_is_ready():
             self.__pub_state('default driving')
