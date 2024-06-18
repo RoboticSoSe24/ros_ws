@@ -71,7 +71,7 @@ class CameraViewer(Node):
         # Set pixels with a total RGB value above 600 to black
         thresh_upper = np.uint8(cv2.threshold(total_rgb_img, 600.0, 65535.0, cv2.THRESH_BINARY_INV)[1])
         # Set pixels with a total RGB value below 150 to black
-        thresh_lower = np.uint8(cv2.threshold(total_rgb_img, 150.0, 65535.0, cv2.THRESH_BINARY)[1])
+        thresh_lower = np.uint8(cv2.threshold(total_rgb_img, 200.0, 65535.0, cv2.THRESH_BINARY)[1])
         # Set pixels to black if the difference between red and green is less than 80
         thresh_diff = np.uint8(cv2.threshold(np.abs(np.int16(G) - np.int16(R)), 80.0, 65535.0, cv2.THRESH_BINARY)[1])
 
@@ -79,13 +79,19 @@ class CameraViewer(Node):
         mask = thresh_upper & thresh_lower & thresh_diff
         cropped_img &= cv2.merge((mask, mask, mask))
 
+        cv2.imshow("traffic_light", cropped_img)
+        cv2.waitKey(1)
+
         # Comparison of the number of red and green pixels
         total_red = cv2.sumElems(cropped_img[:, :, 2])
         total_green = cv2.sumElems(cropped_img[:, :, 1])
 
+        #self.get_logger().info('total_red = {})'.format(total_red))
+        #self.get_logger().info('total_green = {})'.format(total_green))
+
         # Publish message
         msg = Bool()
-        msg.data = False if total_red > total_green else True
+        msg.data = False if (total_red > total_green) else True
         self.traffic_light_pub.publish(msg)
 
 
@@ -100,6 +106,9 @@ class CameraViewer(Node):
             crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)       # convert to grayscale
             crop = np.float32(np.array(crop)) / 255             # normalize pixel values
             input_images[i,:,:] = crop
+
+        cv2.imshow("sign", crop)
+        cv2.waitKey(1)
 
         # find most common prediction among input images
         prediction = model.predict(input_images, verbose=0)

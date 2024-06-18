@@ -165,6 +165,7 @@ class StateController(Node):
                 case 0: req.sign = CrossIntersection.Request.SIGN_LEFT
                 case 1: req.sign = CrossIntersection.Request.SIGN_STRAIGHT
                 case 4: req.sign = CrossIntersection.Request.SIGN_RIGHT
+                case _: req.sign = 255
             self.__sync_call(self.crossroad_client, req)
 
         # default driving
