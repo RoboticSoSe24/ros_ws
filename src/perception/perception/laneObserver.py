@@ -112,9 +112,11 @@ class LaneObserver(Node):
 
         # find all remaining contours
         contours,_ = cv2.findContours(connect, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours = [cnt for cnt in contours if max(cnt, key=lambda pt: pt[0][1])[0][1] > 200]
+
         if contours is None or len(contours) < 2:
             return
-
+        
         # keep two largest contours
         contours = sorted(contours, 
                           key=lambda cnt: np.linalg.norm(max(cnt, key=lambda pt: pt[0][1])[0] - min(cnt, key=lambda pt: pt[0][1])[0]),
