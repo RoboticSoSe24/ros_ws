@@ -10,7 +10,7 @@ import tensorflow as tf
 import numpy as np
 
 # Laden des Modells
-model = tf.keras.models.load_model('./models/model_0.keras')
+model = tf.keras.models.load_model('./models/model_1.keras')
 
 
 class CameraViewer(Node):
@@ -19,7 +19,7 @@ class CameraViewer(Node):
         super().__init__('camera_viewer')
 
         # declare parameters
-        self.declare_parameter('min_sign_count', 10)
+        self.declare_parameter('min_sign_count', 5)
 
         self.bridge = CvBridge()
 

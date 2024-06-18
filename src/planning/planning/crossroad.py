@@ -48,7 +48,7 @@ class Crossroad(Node):
         time.sleep(2.5)
 
         msg.linear.x = 0.1
-        msg.angular.z = -0.23
+        msg.angular.z = -0.28
         self.velocity_publisher.publish(msg)
         time.sleep(5)
 
@@ -71,12 +71,6 @@ class Crossroad(Node):
         self.velocity_publisher.publish(msg)
         time.sleep(11)
 
-    #def stop(self):
-    #    msg = Twist()
-    #    msg.linear.x = 0.0
-    #    msg.angular.z = 0.0
-    #    self.velocity_publisher.publish(msg)
-    #    time.sleep(5)
 
 
 def main(args=None):
