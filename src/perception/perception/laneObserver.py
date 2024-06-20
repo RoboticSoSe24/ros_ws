@@ -52,16 +52,20 @@ class LaneObserver(Node):
 
         # declare relevant windows
         cv2.namedWindow("line width filter")
-        cv2.namedWindow("contour 1, contour 2, centerline")
+        cv2.moveWindow("line width filter", 1920, 0)
         cv2.namedWindow("connected lines")
+        cv2.moveWindow("connected lines", 1920 + 400, 0)
+        cv2.namedWindow("contour 1, contour 2, centerline")
+        cv2.moveWindow("contour 1, contour 2, centerline", 1920 + 800, 0)
 
         # declare parameters
         self.canny_threshold    = TrackbarParameter(self, 'canny_threshold',    "line width filter",                50.0, 255.0)
         self.line_width         = TrackbarParameter(self, 'line_width',         "line width filter",                9,    20)
         self.line_tolerance     = TrackbarParameter(self, 'line_tolerance',     "line width filter",                4,    10)
         self.lane_width         = TrackbarParameter(self, 'lane_width',         "contour 1, contour 2, centerline", 170,  350)
-        self.dot_line_length    = TrackbarParameter(self, 'dot_line_length',    "connected lines",                   25,   40)
-        self.dot_line_tolerance = TrackbarParameter(self, 'dot_line_tolerance', "connected lines",                   5,    10)
+        self.line_begin         = TrackbarParameter(self, 'line_begin',         "contour 1, contour 2, centerline", 200,  240)
+        self.dot_line_length    = TrackbarParameter(self, 'dot_line_length',    "connected lines",                  25,   40)
+        self.dot_line_tolerance = TrackbarParameter(self, 'dot_line_tolerance', "connected lines",                  5,    10)
 
         # init openCV-bridge
         self.bridge = CvBridge()
@@ -112,7 +116,7 @@ class LaneObserver(Node):
 
         # find all remaining contours
         contours,_ = cv2.findContours(connect, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        contours = [cnt for cnt in contours if max(cnt, key=lambda pt: pt[0][1])[0][1] > 200]
+        contours = [cnt for cnt in contours if max(cnt, key=lambda pt: pt[0][1])[0][1] > int(self.line_begin)]
 
         if contours is None or len(contours) < 2:
             return
@@ -127,12 +131,13 @@ class LaneObserver(Node):
         cv2.drawContours(img1, [contours[0]], 0, (255,255,255), int(self.lane_width)) # dilate to achieve an overlap with the other line
         img2 = np.zeros(shape1C[:2], dtype='uint8')
         cv2.drawContours(img2, [contours[1]], 0, (255,255,255), int(self.lane_width)) # dilate to achieve an overlap with the other line
-        centerImg = cv2.ximgproc.thinning(img1 & img2, 0)                           # binary AND to get only overlap region
-        cv2.rectangle(centerImg, (0,0), imSize, (0,0,0), 2)                         # mask out points on the edges of the image 
+        centerImg = cv2.ximgproc.thinning(img1 & img2, 0)                             # binary AND to get only overlap region
+        cv2.rectangle(centerImg, (0,0), imSize, (0,0,0), 2)                           # mask out points on the edges of the image 
         canvas3C = np.zeros(shape3C, dtype='uint8')
         canvas3C[:,:,0] = img1 * 0.5 + (img1 & img2) * 0.25
         canvas3C[:,:,1] = img2 * 0.5 + (img1 & img2) * 0.25
         canvas3C[:,:,2] = centerImg
+        cv2.line(canvas3C, (0, int(self.line_begin)), (320, int(self.line_begin)), (0,0,255))
         cv2.imshow("contour 1, contour 2, centerline", canvas3C)
         cv2.waitKey(1)
 
