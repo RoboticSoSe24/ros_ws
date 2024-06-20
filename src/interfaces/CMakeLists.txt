@@ -13,7 +13,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Lanes.msg"
   "srv/FollowLane.srv"
   "srv/OvertakeObstruction.srv"
-   "srv/ParkingSpace.srv"
+  "srv/ParkingSpace.srv"
+  "srv/CrossIntersection.srv"
   DEPENDENCIES geometry_msgs
 )
 

@@ -22,5 +22,5 @@ launch:
 
 - node:
       pkg: "planning"
-      exec: "parking"
-      name: "parking"
+      exec: "crossroad"
+      name: "crossroad"
