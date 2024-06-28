@@ -124,6 +124,7 @@ class DriveOnParkingSlot(Node):
         self.__rotate_90_deg()
         self.__stop()
 
+        self.counter = 0
         return response
 
 
