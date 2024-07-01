@@ -62,7 +62,7 @@ class LaneObserver(Node):
         self.canny_threshold    = TrackbarParameter(self, 'canny_threshold',    "line width filter",                50.0, 255.0)
         self.line_width         = TrackbarParameter(self, 'line_width',         "line width filter",                9,    20)
         self.line_tolerance     = TrackbarParameter(self, 'line_tolerance',     "line width filter",                4,    10)
-        self.lane_width         = TrackbarParameter(self, 'lane_width',         "contour 1, contour 2, centerline", 170,  350)
+        self.lane_width         = TrackbarParameter(self, 'lane_width',         "contour 1, contour 2, centerline", 270,  350)
         self.line_begin         = TrackbarParameter(self, 'line_begin',         "contour 1, contour 2, centerline", 200,  240)
         self.dot_line_length    = TrackbarParameter(self, 'dot_line_length',    "connected lines",                  25,   40)
         self.dot_line_tolerance = TrackbarParameter(self, 'dot_line_tolerance', "connected lines",                  5,    10)
@@ -111,6 +111,11 @@ class LaneObserver(Node):
         # filter for line segments with the correct width
         filter = self.__filter_line_width(warp)
 
+        # filter for adequate spacing between line segments
+        filter = self.__filter_lane_width(filter)
+        if filter is None:
+            return
+
         # connect line segments to lines
         connect = self.__connect_lines(filter)
 
@@ -128,11 +133,11 @@ class LaneObserver(Node):
 
         # get centerline between two largest contours
         img1 = np.zeros(shape1C[:2], dtype='uint8')
-        cv2.drawContours(img1, [contours[0]], 0, (255,255,255), int(self.lane_width)) # dilate to achieve an overlap with the other line
+        cv2.drawContours(img1, [contours[0]], 0, (255,255,255), int(self.lane_width)//2+10) # dilate to achieve an overlap with the other line
         img2 = np.zeros(shape1C[:2], dtype='uint8')
-        cv2.drawContours(img2, [contours[1]], 0, (255,255,255), int(self.lane_width)) # dilate to achieve an overlap with the other line
-        centerImg = cv2.ximgproc.thinning(img1 & img2, 0)                             # binary AND to get only overlap region
-        cv2.rectangle(centerImg, (0,0), imSize, (0,0,0), 2)                           # mask out points on the edges of the image 
+        cv2.drawContours(img2, [contours[1]], 0, (255,255,255), int(self.lane_width)//2+10) # dilate to achieve an overlap with the other line
+        centerImg = cv2.ximgproc.thinning(img1 & img2, 0)                                   # binary AND to get only overlap region
+        cv2.rectangle(centerImg, (0,0), imSize, (0,0,0), 2)                                 # mask out points on the edges of the image 
         canvas3C = np.zeros(shape3C, dtype='uint8')
         canvas3C[:,:,0] = img1 * 0.5 + (img1 & img2) * 0.25
         canvas3C[:,:,1] = img2 * 0.5 + (img1 & img2) * 0.25
@@ -259,6 +264,78 @@ class LaneObserver(Node):
         return filter
 
 
+    def __filter_lane_width(self, img, debug_img=True):
+        # get current thinned line segments as contours
+        temp = cv2.ximgproc.thinning(img)
+        contours,_ = cv2.findContours(temp, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # filter contours by size
+        contours = sorted(contours, 
+                          key=lambda cnt: np.linalg.norm(
+                              max(cnt, key=lambda pt: pt[0][1])[0] - 
+                              min(cnt, key=lambda pt: pt[0][1])[0]),
+                          reverse=True)
+
+        # find the largest contour with hints of a line on the other side of the lane
+        for cnt in contours:
+            ptMax = max(cnt, key=lambda pt: pt[0][1])[0]
+            ptMin = min(cnt, key=lambda pt: pt[0][1])[0]
+
+            cntImg = np.zeros(img.shape, dtype='uint8')
+
+            cv2.drawContours(cntImg, [cnt], 0, (255,255,255))
+
+            # draw lines at lane_width distance parallel to contour
+            temp = cv2.dilate(
+                    cntImg, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, 
+                    (int(self.lane_width)+1, int(self.lane_width)+1))
+                ) & ~cv2.dilate(
+                    cntImg, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                    (int(self.lane_width)-3, int(self.lane_width)-3))
+                )
+            cv2.circle(temp, ptMax, int(self.lane_width)//2+1, (0,0,0), cv2.FILLED)
+            cv2.circle(temp, ptMin, int(self.lane_width)//2+1, (0,0,0), cv2.FILLED)
+
+            temp = cv2.dilate(temp, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                (int(self.line_width)+int(self.line_tolerance), 
+                 int(self.line_width)+int(self.line_tolerance))))
+
+            '''
+            t2 = cv2.dilate(temp, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, 
+                (int(self.lane_width)+1, int(self.lane_width)+1)))
+
+            cv2.circle(t2, ptMax, int(self.lane_width)//2+1, (0,0,0), cv2.FILLED)
+            cv2.circle(t2, ptMin, int(self.lane_width)//2+1, (0,0,0), cv2.FILLED)
+
+            t3 = cv2.dilate(temp, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                (int(self.lane_width)-3, int(self.lane_width)-3)))
+            
+            t4 = t2 & ~t3   # points at lane_width distance
+            
+            t5 = cv2.dilate(t4, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                (int(self.line_width)+int(self.line_tolerance), 
+                 int(self.line_width)+int(self.line_tolerance))))
+            
+            canvas = np.zeros((img.shape[0], img.shape[1], 3), dtype='uint8')
+            canvas[:,:,0] = temp | t5
+            canvas[:,:,1] = t4
+            canvas[:,:,2] = img
+            '''
+
+            if cv2.countNonZero(temp & img) > 10:
+                cntImg = cv2.dilate(cntImg, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                    (int(self.line_width), int(self.line_width))))
+
+                out = img & (cntImg | temp)
+
+                cv2.imshow("out", out)
+                cv2.waitKey(1)
+
+                return out
+            
+        return None
+
+
     def __connect_lines(self, img, debug_img=True):
         # get current line segments as contours
         contours,_ = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -273,7 +350,8 @@ class LaneObserver(Node):
 
             d = np.linalg.norm(ptMin - ptMax)
             
-            if int(self.dot_line_length) - int(self.dot_line_tolerance) < d < int(self.dot_line_length) + int(self.dot_line_tolerance):
+            if 1 < d < int(self.dot_line_length) + int(self.dot_line_tolerance):
+            #if int(self.dot_line_length) - int(self.dot_line_tolerance) < d < int(self.dot_line_length) + int(self.dot_line_tolerance):
                 vec = np.int0((ptMax - ptMin) / d * int(self.dot_line_length))
                 cv2.line(connect, ptMax+vec, ptMin-vec, (255,255,255), 5)
             
