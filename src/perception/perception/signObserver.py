@@ -59,7 +59,7 @@ class CameraViewer(Node):
         cv2.moveWindow("traffic light", 1920 + 400, 400)
 
         # declare parameters
-        self.min_sign_count = TrackbarParameter(self, 'min_sign_count', "src image", 8, 30)
+        self.min_sign_count = TrackbarParameter(self, 'min_sign_count', "src image", 5, 30)
         self.color_diff     = TrackbarParameter(self, 'color_diff', "traffic light", 100, 255)
         self.min_brightness = TrackbarParameter(self, 'min_brightness', "traffic light", 200, 765)
         self.max_brightness = TrackbarParameter(self, 'max_brightness', "traffic light", 600, 765)

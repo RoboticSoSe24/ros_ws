@@ -22,9 +22,9 @@ class DriveOnParkingSlot(Node):
         self.cb_group = ReentrantCallbackGroup()
 
         # declaration of parameters that can be changed at runtime
-        self.declare_parameter('scan_height', 0.38)
+        self.declare_parameter('scan_height', 0.36)
         self.declare_parameter('scan_width', 0.35)
-        self.declare_parameter('idle_drive_time', 9.0)
+        self.declare_parameter('idle_drive_time', 6.5)
         self.declare_parameter('parking_time', 10.0)
         self.declare_parameter('max_distance', 16.0)
         
@@ -83,6 +83,8 @@ class DriveOnParkingSlot(Node):
             d = msg.ranges[a]
             if d != 0.0 and d < l:
                 self.counter += 1
+
+        self.get_logger().info(f"scan intersections - counter: {self.counter}")
 
 
     def parking_callback(self, request, response):

@@ -54,6 +54,7 @@ class StateController(Node):
             qos_profile=qos_policy, 
             callback_group=self.cb_group)
         self.min_distance = float('inf')    # variable for the last laserscan reading
+        self.scan_counter = 0
 
         # subscribe to traffic lights
         self.traffic_light_sub = self.create_subscription(
@@ -111,14 +112,15 @@ class StateController(Node):
 
     def scanner_callback(self, msg):
         scan_angle = self.get_parameter('scan_angle').get_parameter_value().integer_value
+        distance_stop = self.get_parameter('distance_to_stop').get_parameter_value().double_value
 
-        self.min_distance = float('inf')
+        self.scan_counter = 0
 
         # find the closest object in a scan angle in front of the bot
         for i in range(-int(scan_angle / 2), int(scan_angle / 2)):
             d = msg.ranges[i]
-            if d != 0.0 and d < self.min_distance:
-                self.min_distance = d
+            if d != 0.0 and d < distance_stop:
+                self.scan_counter += 1
 
 
     def traffic_light_callback(self, msg):
@@ -127,7 +129,6 @@ class StateController(Node):
 
     def signs_callback(self, msg):
         self.last_sign = msg.data
-        self.get_logger().info(f'Received sign: {self.last_sign}')
 
 
     def timer_callback(self):
@@ -139,7 +140,7 @@ class StateController(Node):
             self.__stop()
 
         # overtake obstruction
-        elif self.min_distance < distance_stop and self.obstruction_client.service_is_ready():
+        elif self.scan_counter > 1 and self.obstruction_client.service_is_ready():
             self.__pub_state('overtaking obstruction')
             req = OvertakeObstruction.Request()
             self.get_logger().info('overtaking completed')
