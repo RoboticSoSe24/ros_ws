@@ -127,6 +127,7 @@ class StateController(Node):
 
     def signs_callback(self, msg):
         self.last_sign = msg.data
+        self.get_logger().info(f'Received sign: {self.last_sign}')
 
 
     def timer_callback(self):
@@ -141,6 +142,7 @@ class StateController(Node):
         elif self.min_distance < distance_stop and self.obstruction_client.service_is_ready():
             self.__pub_state('overtaking obstruction')
             req = OvertakeObstruction.Request()
+            self.get_logger().info('overtaking completed')
             req.distance = distance_stop * math.sqrt(2) + 0.08  # safety margin so overtake won't immediately return
             self.__sync_call(self.obstruction_client, req)
 
@@ -156,6 +158,8 @@ class StateController(Node):
             self.__pub_state('parking')
             req = ParkingSpace.Request()
             self.__sync_call(self.parking_client, req)
+            self.get_logger().info('Parking completed, resetting last_sign')
+            self.last_sign = None  # Reset the sign after parking
 
         # crossroad
         elif self.last_sign in [0, 1, 4] and self.crossroad_client.service_is_ready():

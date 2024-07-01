@@ -24,7 +24,8 @@ setup(
             'stateController    = planning.stateController:main',
             'obstruction        = planning.obstruction:main',
             'parking            = planning.parking:main',
-            'crossroad          = planning.crossroad:main'
+            'crossroad          = planning.crossroad:main',
+            'img                = planning.img:main'
         ],
     },
 )
